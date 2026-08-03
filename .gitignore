@@ -28,3 +28,7 @@ dist-ssr
 
 # Deploy script (contains server/SSH info)
 deploy.sh
+
+# Spec Documents
+dayhour_heatmap_spec.md
+overall_heatmap_spec.md
