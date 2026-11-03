@@ -1212,3 +1212,16 @@ body {
   color: var(--text-secondary);
   font-weight: 500;
 }
+
+/* ========================= 通知バー ========================= */
+.notice {
+  border-radius: 8px;
+  padding: 0.6rem 0.9rem;
+  margin-bottom: 0.75rem;
+  border: 1px solid transparent;
+  font-size: 0.85rem;
+}
+.notice.hidden { display: none; }
+.notice-info  { background: rgba(59, 130, 246, 0.10); border-color: rgba(59, 130, 246, 0.30); color: #1e3a8a; }
+.notice-warn  { background: rgba(245, 158, 11, 0.10); border-color: rgba(245, 158, 11, 0.35); color: #92400e; }
+.notice-error { background: rgba(239, 68, 68, 0.10);  border-color: rgba(239, 68, 68, 0.35);  color: #991b1b; }

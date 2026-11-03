@@ -74,23 +74,27 @@ npm install
 
 ```javascript
 // public/pta/config.js
-window.PTA_CONFIG = { BASE_URL: 'https://your-jennifer-server/', API_DOMAIN: '' };
+window.PTA_CONFIG = { API_DOMAIN: '' };
 
 // public/pd/config.js
 window.PD_CONFIG = {
-  BASE_URL: 'https://your-jennifer-server/',
   API_DOMAIN: '',
   CHUNK_WAIT_MS: 0,     // 1분 청크 간 웨이트(ms). 데이터서버 부하가 우려되면 100~500 권장
-  MAX_POINTS: 300000    // 누적 트랜잭션 건수의 안전 상한
+  MAX_POINTS: 300000,   // 누적 트랜잭션 건수의 안전 상한
+  CONFIRM_CHUNKS: 120   // 이 횟수(=분)를 넘는 조회는 실행 전에 확인창을 표시
 };
 ```
 
 | 변수명 | 대상 | 설명 |
 |---|---|---|
-| `BASE_URL` | PTA, PD | API 프록시 대상 주소 |
 | `API_DOMAIN` | PTA, PD | 프록시 없이 API 서버에 직접 요청할 때 사용 (Nginx 배포 시 비워둠) |
 | `CHUNK_WAIT_MS` | PD | 트랜잭션 수집 시 1분 청크 간 대기 시간 |
 | `MAX_POINTS` | PD | 누적 트랜잭션 건수 상한 |
+| `CONFIRM_CHUNKS` | PD | 조회가 이 횟수(1분 = 1회)를 넘으면 실행 전에 확인창 표시 (기본 120) |
+| `ALLOW_MOCK` | PTA, PD | 서버 접속 실패 시 **모크 데이터**를 표시할지 여부 (기본: 개발 서버에서만 허용). 운영에서는 지정하지 마세요 — 실데이터로 오인될 수 있습니다 |
+
+> 이전 버전의 `BASE_URL` 은 사용되지 않습니다(남아 있어도 무시). 개발 서버 프록시 대상은 `.env` 의 `DEV_API_TARGET`
+> (기본: 데모 서버), 운영은 nginx 설정으로 지정합니다.
 
 ### 3. API 토큰 설정 (로컬 개발)
 
@@ -121,6 +125,15 @@ npm run dev
 개발 서버의 `/api` 요청은 `https://demo.jennifersoft.co.jp/` 로 프록시됩니다 (`vite.config.js`).
 
 ---
+
+## 테스트
+
+```bash
+npm test      # Node 내장 테스트 러너 (node --test). 추가 의존성 없음
+```
+
+`tests/` 에는 PD의 API 계층(청크 분할·재시도·중단)과 통계 엔진(필터·히스토그램·퍼센타일)의 회귀 테스트가 있습니다.
+GitHub Actions(`.github/workflows/ci.yml`)가 push/PR 마다 테스트·빌드·`npm audit`(운영 의존성)을 실행합니다.
 
 ## 빌드 및 배포
 

@@ -68,11 +68,12 @@ cp .env.example .env      # DEV_API_TOKEN 에 로컬 테스트용 토큰 입력
 npm run dev               # http://localhost:5177/pd/  (PTA·PD 공용 포트)
 ```
 
-`public/pd/config.js` 의 `BASE_URL` 을 대상 JENNIFER 서버로 맞추고,
-개발 서버 프록시 `target` (`vite.config.js`, 기본값 `https://demo.jennifersoft.co.jp/`) 도 동일하게 지정합니다.
+대상 JENNIFER 서버는 `.env` 의 `DEV_API_TARGET` 으로 지정합니다 (기본값 `https://demo.jennifersoft.co.jp/`).
+런타임 `config.js` 의 `BASE_URL` 은 더 이상 사용되지 않습니다.
 
-토큰이 없거나 서버에 접속할 수 없으면 **모크 데이터**로 화면이 그려지며,
-상단에 「実データではありません」 경고가 표시됩니다.
+서버에 접속할 수 없으면 **개발 서버(`npm run dev`)에서만** 모크 데이터로 화면이 그려지며, 상단에 「実データではありません」
+경고가 표시됩니다. 운영 빌드에서는 모크를 표시하지 않고 오류 안내만 표시합니다
+(필요하면 `config.js` 에 `ALLOW_MOCK: true` 를 명시. 실데이터로 오인될 수 있어 권장하지 않습니다).
 
 ```bash
 npm run build             # dist/ 생성 (dist/pta, dist/pd, dist/shared — fix-paths.js 자동 실행)

@@ -11,7 +11,7 @@ import { fmt, fmtInt } from './chart.js';
 let overlayEl = null;
 let panelEl = null;
 
-const MAX_ROWS = 200;
+export const MAX_ROWS = 200;
 
 function ensureElements() {
   if (panelEl) return;

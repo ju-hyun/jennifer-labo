@@ -57,12 +57,12 @@
   - `/api/dbmetrics/business` — 비지니스별 메트릭 조회
 - **시간 패턴**: `yyyyMMddHH` 형식 (시간 단위 정밀 데이터 조회).
 - **병합 로직**: API의 31일 조회 제한을 우회하기 위해 1년 데이터를 월 단위(12개 청크)로 분할 요청 후 병합, 시간순 정렬 및 중복 제거.
-- **Mock 데이터**: API 호출 실패 시 시드 기반의 랜덤 데이터를 생성하여 시스템의 가용성 보장.
+- **Mock 데이터**: 개발 서버(또는 `ALLOW_MOCK: true` 명시) 환경에서만, API 호출이 전부 실패했을 때 랜덤 데이터로 화면을 확인할 수 있게 한다. 운영 빌드에서는 실데이터로 오인되지 않도록 모크를 쓰지 않고, 실패/부분 실패를 화면 상단 알림으로 표시한다.
 
 ### 3.2 런타임 설정 (Runtime Configuration)
-- **설정 파일**: `public/pta/config.js` (`window.PTA_CONFIG` 전역 객체, `BASE_URL`/`API_DOMAIN`만 포함)
+- **설정 파일**: `public/pta/config.js` (`window.PTA_CONFIG` 전역 객체, `API_DOMAIN`과 선택 항목 `ALLOW_MOCK`)
 - **빌드 독립적**: 빌드 후에도 `dist/pta/config.js`를 직접 수정하여 API 서버 주소 변경 가능.
-- **참조 경로**: `src/pta/main.js`가 `window.PTA_CONFIG`를 직접 읽어 `PTA_CFG.BASE_URL`, `PTA_CFG.API_DOMAIN`으로 사용 (별도 설정 모듈 파일 없음).
+- **참조 경로**: `src/pta/main.js`가 `window.PTA_CONFIG`를 직접 읽어 `PTA_CFG.API_DOMAIN`, `PTA_CFG.ALLOW_MOCK`으로 사용 (과거의 `BASE_URL`은 참조되지 않음) (별도 설정 모듈 파일 없음).
 - **API 인증 토큰**: 클라이언트에는 존재하지 않음. `/api/` 요청이 업스트림으로 전달되는 시점에 리버스 프록시(운영: nginx, 로컬: Vite dev 서버)가 서버 측에서 주입 (§5.2 참고).
 
 ### 3.3 주요 메트릭 (Metrics)

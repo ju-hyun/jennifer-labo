@@ -12,6 +12,24 @@ const d3 = { select, selectAll, scaleLinear, scaleSequential, max, min, hexbin }
 // Runtime configuration (pta/config.js에서 window.PTA_CONFIG로 로드)
 const PTA_CFG = window.PTA_CONFIG || {};
 
+/**
+ * 接続失敗時にダミー(モック)データを表示してよいか。
+ * 運用環境で実データと誤認されないよう、開発ビルドか、config.js の ALLOW_MOCK: true の明示指定時のみ許可する。
+ */
+const MOCK_ALLOWED = !!(import.meta.env?.DEV || PTA_CFG.ALLOW_MOCK === true);
+
+/** 画面上部の通知バーに表示する (message が空なら隠す) */
+function showNotice(message, level = 'info') {
+  const bar = document.getElementById('noticeBar');
+  if (!bar) return;
+  if (!message) {
+    bar.classList.add('hidden');
+    return;
+  }
+  bar.textContent = message;
+  bar.className = `notice notice-${level}`;
+}
+
 // Global variables
 const API_BASE = (PTA_CFG.API_DOMAIN || '') + '/api/dbmetrics';
 const BUSINESS_METRICS_API_BASE = (PTA_CFG.API_DOMAIN || '') + '/api/dbmetrics/business';
@@ -100,13 +118,9 @@ Chart.defaults.plugins.tooltip.padding = 10;
 Chart.defaults.plugins.tooltip.cornerRadius = 4;
 
 document.addEventListener('DOMContentLoaded', async () => {
-  // Validate configuration
-  const missingVars = [];
-  if (!PTA_CFG.BASE_URL) missingVars.push('BASE_URL');
-
-  if (missingVars.length > 0) {
-    showConfigError(`${missingVars.join(' and ')} is not defined in pta/config.js file.`);
-    return;
+  // config.js が無くても既定値 (同一オリジンの /api) で動作するため、起動はブロックしない
+  if (!window.PTA_CONFIG) {
+    console.warn('PTA_CONFIG が未設定です。pta/config.js が index.html と同じ場所に配置されているか確認してください。');
   }
 
   // Initial load: Load domains first, then data
@@ -248,7 +262,7 @@ function showConfigError(message, title = 'Configuration Error') {
       <h2>${title}</h2>
       <p>${message}</p>
       <div class="config-error-box">
-        <code>Please check your <strong>.env</strong> file settings.</code>
+        <code>Please check <strong>pta/config.js</strong> and the server-side API proxy (token) settings.</code>
       </div>
     </div>
   `;
@@ -345,7 +359,16 @@ async function loadDomains() {
 
     if (document.querySelector('.config-error-overlay')) return false;
 
-    // Fallback to mock domains with hierarchy
+    if (!MOCK_ALLOWED) {
+      showNotice('ドメイン一覧を取得できませんでした。ネットワークとAPIプロキシの設定をご確認ください。', 'error');
+      domainTree = [];
+      currentSelectedPath = [];
+      renderHierarchicalSelector();
+      return false;
+    }
+
+    // 開発時のみ: モックのドメイン階層で画面を確認できるようにする
+    showNotice('ドメイン一覧を取得できなかったため、モックのドメインで表示しています。実データではありません。', 'warn');
     const mockFlatDomains = [
       { domainId: '1000', name: 'REALTIME, ANALYSIS', groupHierarchy: ['JENNIFER DEMO', 'MSA'] },
       { domainId: '1001', name: 'MSA-2nd', groupHierarchy: ['JENNIFER DEMO', 'MSA'] },
@@ -370,7 +393,7 @@ function buildDomainTree(flatDomains) {
 
   flatDomains.forEach(domain => {
     let currentLevel = tree;
-    const hierarchy = domain.groupHierarchy || ['未分類ドメイン'];
+    const hierarchy = domain.groupHierarchy?.length ? domain.groupHierarchy : ['未分類ドメイン'];
 
     hierarchy.forEach((groupName, index) => {
       let group = currentLevel.find(item => item.name === groupName && item.type === 'group');
@@ -428,6 +451,14 @@ function renderHierarchicalSelector() {
   const container = document.getElementById('breadcrumbContainer');
   if (!container) return;
   container.innerHTML = '';
+
+  if (currentSelectedPath.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'breadcrumb-item loading';
+    empty.textContent = '選択できるドメインがありません';
+    container.appendChild(empty);
+    return;
+  }
 
   currentSelectedPath.forEach((item, index) => {
     // Add separator if not the first item
@@ -603,11 +634,14 @@ async function loadInstances(domainId) {
   } catch (error) {
     console.error(`Failed to load instances for domain ${domainId}. URL: ${urlString}`, error);
 
-    // Fallback to mock instances
-    const mockInstances = [
-      { instanceId: '1', name: `Instance-${domainId}-1` },
-      { instanceId: '2', name: `Instance-${domainId}-2` }
-    ];
+    // 本番ではダミーのインスタンスを出さない (実在しないインスタンスを選ばせないため)
+    const mockInstances = MOCK_ALLOWED
+      ? [
+        { instanceId: '1', name: `Instance-${domainId}-1` },
+        { instanceId: '2', name: `Instance-${domainId}-2` }
+      ]
+      : [];
+    if (!MOCK_ALLOWED) showNotice('インスタンス一覧を取得できませんでした。', 'warn');
 
     instanceSelect.innerHTML = '<option value="">全体インスタンス</option>';
     mockInstances.forEach(instance => {
@@ -647,7 +681,7 @@ async function fetchBusinesses(domainId) {
       option.value = biz.businessId;
 
       // Indentation based on businessIndex (e.g. "0.0" -> 1 level)
-      const dotCount = (biz.businessIndex.match(/\./g) || []).length;
+      const dotCount = (String(biz.businessIndex ?? '').match(/\./g) || []).length;
       const indent = '\u00A0\u00A0'.repeat(dotCount); // 2 spaces per level
 
       option.textContent = indent + biz.name;
@@ -705,6 +739,8 @@ async function loadData() {
     ])).filter(m => m !== 'err_rate');
     const fetchPromisesMap = {};
     metricsToFetch.forEach(m => fetchPromisesMap[m] = []);
+    let totalRequests = 0;
+    let failedRequests = 0;
 
     for (let i = 11; i >= 0; i--) {
       const monthStart = new Date(today.getFullYear(), today.getMonth() - i, 1);
@@ -712,10 +748,12 @@ async function loadData() {
       const monthEnd = new Date(today.getFullYear(), today.getMonth() - i + 1, 1);
 
       metricsToFetch.forEach(m => {
+        totalRequests++;
         fetchPromisesMap[m].push(
           fetchMetricData(domainId, targetId, targetType, formatDateParam(monthStart), formatDateParam(monthEnd), 1440, m)
             .catch(err => {
               console.warn(`Failed to fetch partially for ${formatDateParam(monthStart)} metric ${m}`, err);
+              failedRequests++;
               return [];
             })
         );
@@ -729,6 +767,22 @@ async function loadData() {
 
     // 待っている間に別の読み込みが始まっていたら、古い結果は破棄する
     if (isStale()) return;
+
+    // 失敗したリクエストがあれば画面で知らせる (月単位で欠けたまま気付かれないのを防ぐ)
+    if (failedRequests === 0) {
+      showNotice('');
+    } else if (failedRequests === totalRequests) {
+      if (MOCK_ALLOWED) {
+        mockDataOnFailPartial();
+        return;
+      }
+      showNotice('JENNIFERサーバからデータを取得できませんでした。ネットワークとAPIプロキシの設定をご確認ください。', 'error');
+    } else {
+      showNotice(
+        `${failedRequests}/${totalRequests} 件のAPIリクエストが失敗しました。一部の期間のデータが欠けている可能性があります。`,
+        'warn'
+      );
+    }
 
     // 병합 및 시간순 정렬 및 중복 제거
     const processResults = (resArray) => {
@@ -780,7 +834,11 @@ async function loadData() {
 
   } catch (error) {
     console.error('Data loading failed:', error);
-    mockDataOnFailPartial();
+    if (MOCK_ALLOWED) {
+      mockDataOnFailPartial();
+    } else {
+      showNotice('データの処理中にエラーが発生しました。', 'error');
+    }
   } finally {
     if (loadingOverlay && !isStale()) loadingOverlay.classList.add('hidden');
   }
@@ -1292,6 +1350,7 @@ let currentMetricLabelCache = '';
 function calculateMonthlyAverages(data, label) {
   currentMetricLabelCache = label;
   monthlyAveragesCache = {};
+  monthlyAveragesVersion++;
 
   const monthData = {};
   const today = new Date();
@@ -1380,16 +1439,29 @@ function calculateMonthlyAverages(data, label) {
   });
 }
 
+// 統計グリッドの再描画をスキップするための署名と、月別平均の更新世代
+let statsGridSig = '';
+let monthlyAveragesVersion = 0;
+
 function updateChartStatsGrid(labels, chart) {
   const avgWrapper = document.getElementById('statsAvgValues');
   const rateWrapper = document.getElementById('statsRateValues');
   if (!avgWrapper || !rateWrapper || !chart) return;
 
-  avgWrapper.innerHTML = '';
-  rateWrapper.innerHTML = '';
-
   const { chartArea, scales: { x } } = chart;
   if (!chartArea) return;
+
+  // マウス移動などで afterDraw が頻繁に呼ばれるが、データ・サイズ・位置が同じなら DOM は作り直さない
+  const offsetX = Math.round(chart.canvas.getBoundingClientRect().left - avgWrapper.getBoundingClientRect().left);
+  const sig = [
+    labels.length, labels[0], labels[labels.length - 1],
+    Math.round(chartArea.left), Math.round(chartArea.right), offsetX, monthlyAveragesVersion
+  ].join('|');
+  if (sig === statsGridSig && avgWrapper.childElementCount > 0) return;
+  statsGridSig = sig;
+
+  avgWrapper.innerHTML = '';
+  rateWrapper.innerHTML = '';
 
   // Re-calculate month zones to get exact center positions
   const monthZones = [];
@@ -1465,6 +1537,13 @@ function updateChartStatsGrid(labels, chart) {
   });
 }
 
+
+// キーボード操作で選択範囲が連続して変わるとき、API 再取得を最後の 1 回にまとめる
+let selectionTimer = null;
+function scheduleSelectionChanged(delay = 150) {
+  clearTimeout(selectionTimer);
+  selectionTimer = setTimeout(handleChartSelectionChanged, delay);
+}
 
 // Selection Change Handler
 async function handleChartSelectionChanged() {
@@ -1569,7 +1648,11 @@ async function handleChartSelectionChanged() {
   }
 }
 
+// 連続して選択範囲が変わったとき、古いリクエストの結果で画面を上書きしないための世代番号
+let heatmapSeq = 0;
+
 async function reloadHeatmaps(domainId, targetId, targetType, startDate, endDate) {
+  const seq = ++heatmapSeq;
   try {
     const fetchEndDate = new Date(endDate);
     fetchEndDate.setDate(fetchEndDate.getDate() + 1);
@@ -1614,6 +1697,7 @@ async function reloadHeatmaps(domainId, targetId, targetType, startDate, endDate
     const timeResults = await Promise.all(timePromises);
     const countResults = await Promise.all(countPromises);
     const errCountResults = (currentMetric === 'err_rate') ? await Promise.all(errCountPromises) : [];
+    if (seq !== heatmapSeq) return;
 
     let heatmapTimeData = [];
     timeResults.forEach(res => heatmapTimeData.push(...res));
@@ -2239,6 +2323,10 @@ window.addEventListener('keydown', (e) => {
   }
 
   if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+  // 入力欄・セレクトボックスの操作や修飾キー付きの操作は奪わない
+  const tag = e.target?.tagName;
+  if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || e.target?.isContentEditable) return;
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
   if (!mainChartInstance || !selectedStartMonth || !selectedEndMonth) return;
 
   const labels = mainChartInstance.data.labels;
@@ -2306,7 +2394,7 @@ window.addEventListener('keydown', (e) => {
         }
       }
     }
-    handleChartSelectionChanged();
+    scheduleSelectionChanged();
     mainChartInstance.update();
   } else {
     // Shift the entire range
@@ -2315,7 +2403,7 @@ window.addEventListener('keydown', (e) => {
     if (newStartIdx >= 0 && newEndIdx < uniqueMonths.length) {
       selectedStartMonth = uniqueMonths[newStartIdx];
       selectedEndMonth = uniqueMonths[newEndIdx];
-      handleChartSelectionChanged();
+      scheduleSelectionChanged();
       mainChartInstance.update();
     }
   }
@@ -2348,6 +2436,7 @@ function parseDateString(dateStr, full = false) {
 // Fallback logic for when API is unreachable due to CORS or local network issues
 function mockDataOnFailPartial() {
   console.log("Using Mock Data (1 Year)");
+  showNotice('JENNIFERサーバに接続できませんでした。以下はモックデータによる表示です。実データではありません。', 'error');
 
   // Generate 365 days of mock data
   const mockDates = [];

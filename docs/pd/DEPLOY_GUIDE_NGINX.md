@@ -14,11 +14,11 @@ PD 접속 경로는 `/pd/` 입니다. PTA 관련 내용은 [PTA 배포 가이드
 
 ```javascript
 window.PD_CONFIG = {
-  BASE_URL: '<your_jennifer_server>',
   API_DOMAIN: '',      // Nginx 프록시 사용 시 비워둠
 
   CHUNK_WAIT_MS: 0,    // 1분 청크 간 웨이트(ms). 데이터서버 부하가 우려되면 100~500 권장
-  MAX_POINTS: 300000   // 누적 트랜잭션 건수의 안전 상한
+  MAX_POINTS: 300000,  // 누적 트랜잭션 건수의 안전 상한
+  CONFIRM_CHUNKS: 120  // 이 횟수(=분)를 넘는 조회는 실행 전에 확인창 표시
 };
 ```
 

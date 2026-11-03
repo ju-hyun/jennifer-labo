@@ -354,7 +354,7 @@ export function buildHistogram(sorted, opts = {}) {
   for (let i = 0; i < n; i++) {
     const v = sorted[i];
     const b = Math.floor(v / binWidth);
-    // 上限超過分は最終ビンに合算 (クリッピング)。参照画像右端の突出した棒がこれ。
+    // 上限超過分は overflowCount に集計する (描画側が最終の別棒として表示する)。
     if (b >= binCount) overflowCount++;
     else counts[b]++;
   }

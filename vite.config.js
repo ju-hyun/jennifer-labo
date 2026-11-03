@@ -17,6 +17,8 @@ export default defineConfig(({ mode }) => {
     }
     // 업스트림 TLS 인증서는 기본으로 검증한다. 자가 서명 인증서 서버를 쓸 때만 DEV_INSECURE_TLS=1 로 끈다.
     const verifyUpstreamTls = env.DEV_INSECURE_TLS !== '1';
+    // 開発プロキシの接続先 (JENNIFER サーバ)。未指定ならデモサーバ。
+    const apiTarget = env.DEV_API_TARGET || 'https://demo.jennifersoft.co.jp/';
 
     return {
         base: './', // 빌드 시 상대 경로 사용
@@ -26,7 +28,7 @@ export default defineConfig(({ mode }) => {
             strictPort: true,
             proxy: {
                 '/api': {
-                    target: 'https://demo.jennifersoft.co.jp/',
+                    target: apiTarget,
                     changeOrigin: true,
                     secure: verifyUpstreamTls,
                     configure: (proxy) => {
