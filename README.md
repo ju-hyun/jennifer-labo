@@ -33,8 +33,9 @@ JenniferLabo/
 │   ├── index.html            #   대시보드
 │   └── help.html             #   분석 가이드
 ├── src/
-│   ├── pta/                  # PTA 소스 (main.js, style.css)
-│   └── pd/                   # PD 소스 (main, api, chart, panel, stats, style.css)
+│   ├── pta/                  # PTA 소스 (main 진입점 + 역할별 모듈, lib/ 순수 계산, style.css)
+│   ├── pd/                   # PD 소스 (main, api, chart, panel, stats, style.css)
+│   └── shared/               # PTA·PD 공통 (http, domain-tree, html, percentile)
 ├── public/
 │   ├── pta/config.js         # PTA 런타임 설정 (window.PTA_CONFIG)
 │   └── pd/config.js          # PD 런타임 설정 (window.PD_CONFIG)
@@ -131,11 +132,20 @@ npm run dev
 ## 테스트
 
 ```bash
+npm run lint  # ESLint (미사용 변수, 미정의 이름, 누락된 import 등)
 npm test      # Node 내장 테스트 러너 (node --test). 추가 의존성 없음
 ```
 
-`tests/` 에는 PD의 API 계층(청크 분할·재시도·중단)과 통계 엔진(필터·히스토그램·퍼센타일)의 회귀 테스트가 있습니다.
-GitHub Actions(`.github/workflows/ci.yml`)가 push/PR 마다 테스트·빌드·`npm audit`(운영 의존성)을 실행합니다.
+`tests/` 에는 다음의 회귀 테스트가 있습니다.
+
+- PD: API 계층(청크 분할·재시도·중단), 통계 엔진(필터·히스토그램·퍼센타일)
+- PTA: 순수 계산 로직(`src/pta/lib/` — 시계열 병합·에러율·월별 평균/전월 대비·요일×시간 집계·IQR 임계값)
+- 공통(`src/shared/`): HTTP 호출·401 처리, 도메인 트리, 이스케이프, 퍼센타일
+
+GitHub Actions(`.github/workflows/ci.yml`)가 push/PR 마다 린트·테스트·빌드·`npm audit`(운영 의존성)을 실행합니다.
+
+> `package.json` 의 `overrides` 는 개발 도구(ESLint)가 의존하는 `minimatch` 의 알려진 취약점(DoS)을 패치된 버전으로
+> 올리기 위한 것입니다. 운영 번들에는 포함되지 않습니다.
 
 ## 빌드 및 배포
 
