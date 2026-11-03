@@ -119,8 +119,10 @@ npm run dev
 
 > 개발 서버는 기본으로 **본인 PC(localhost)에서만** 접속됩니다. 프록시가 `DEV_API_TOKEN`을 자동으로 붙이기 때문에
 > 외부에 열면 같은 네트워크의 누구나 그 토큰으로 API를 호출할 수 있어서입니다. VM/컨테이너 밖에서 접속해야 하면
-> `.env`에 `DEV_HOST=0.0.0.0`을 지정하세요. 업스트림 TLS 인증서는 기본으로 검증하며, 자가 서명 인증서 서버를 쓸 때만
-> `DEV_INSECURE_TLS=1`로 끕니다 (자세한 내용은 `.env.example`).
+> `.env`에 `DEV_HOST=0.0.0.0`을 지정하세요. 업스트림 TLS 인증서는 기본으로 검증합니다.
+> 터미널에 `http proxy error ... self-signed certificate` 가 나오면(자가 서명 인증서 서버나 사내 TLS 검사 환경),
+> `.env`에 `DEV_INSECURE_TLS=1`을 추가하거나, 검증을 유지하려면 `NODE_EXTRA_CA_CERTS=/경로/ca.pem npm run dev`
+> 로 해당 인증서만 신뢰하세요 (자세한 내용은 `.env.example`).
 
 개발 서버의 `/api` 요청은 `https://demo.jennifersoft.co.jp/` 로 프록시됩니다 (`vite.config.js`).
 

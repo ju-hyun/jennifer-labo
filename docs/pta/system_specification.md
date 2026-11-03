@@ -131,7 +131,7 @@
 
 ### 5.2 개발 서버 프록시
 - Vite 개발 서버(포트 `5177`, PTA·PD 공용 단일 포트, `strictPort: true`)에서 `/api` 경로 요청을 `https://demo.jennifersoft.co.jp/`로 프록시 (`vite.config.js`의 `target`).
-- 업스트림 TLS 인증서는 기본으로 검증하며(`secure: true`), 자가서명 인증서 서버로 개발할 때만 `.env`의 `DEV_INSECURE_TLS=1`로 검증을 끈다.
+- 업스트림 TLS 인증서는 기본으로 검증하며(`secure: true`), 자가서명 인증서 서버로 개발할 때는 `.env`의 `DEV_INSECURE_TLS=1`로 검증을 끄거나(간단), `NODE_EXTRA_CA_CERTS`로 해당 인증서만 신뢰한다(권장). 검증 실패 시 개발 서버 터미널에 해결 방법이 한 번 안내된다.
 - 개발 서버는 기본으로 `localhost`에만 바인딩한다(프록시가 토큰을 주입하므로). 외부 접속이 필요하면 `.env`의 `DEV_HOST`를 지정한다.
 - `configure` 훅에서 `proxy.on('proxyReq', ...)`을 통해, 업스트림으로 요청이 전달되기 직전에 `.env`의 `DEV_API_TOKEN` 값을 `token` 쿼리파라미터로 주입 (클라이언트 코드는 토큰을 모름).
 - 같은 훅에서 `proxy.on('proxyRes', ...)`으로 CORS 관련 헤더(`Cross-Origin-Resource-Policy` 등) 주입.
