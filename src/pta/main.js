@@ -124,7 +124,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   // Initial load: Load domains first, then data
-  const domainsLoaded = await loadDomains();
+  await loadDomains();
 
   // If a configuration/auth error was already shown by loadDomains, stop here
   if (document.querySelector('.config-error-overlay')) return;
@@ -395,7 +395,7 @@ function buildDomainTree(flatDomains) {
     let currentLevel = tree;
     const hierarchy = domain.groupHierarchy?.length ? domain.groupHierarchy : ['未分類ドメイン'];
 
-    hierarchy.forEach((groupName, index) => {
+    hierarchy.forEach((groupName) => {
       let group = currentLevel.find(item => item.name === groupName && item.type === 'group');
       if (!group) {
         group = {
@@ -1282,7 +1282,7 @@ function updateChart(canvasId, label, data, color, chartInstance, setInstanceCal
               padding: 10,
               font: { size: 10 },
               usePointStyle: true,
-              filter: function (item, chart) {
+              filter: function (item) {
                 // Filter out the primary metric and Max CPU from the legend
                 return item.text.includes('移動平均');
               }
@@ -1312,7 +1312,7 @@ function updateChart(canvasId, label, data, color, chartInstance, setInstanceCal
               maxRotation: 0,
               autoSkip: false,
               font: { size: 10 },
-              callback: function (value, index, values) {
+              callback: function (value) {
                 const label = this.getLabelForValue(value);
                 if (label && label.endsWith('/15')) {
                   return label;
@@ -1548,7 +1548,6 @@ function scheduleSelectionChanged(delay = 150) {
 // Selection Change Handler
 async function handleChartSelectionChanged() {
   const rangeDisplay = document.getElementById('selectedRangeDisplay');
-  const metrics = currentMetric;
   const domainId = getCurrentDomainId();
 
   const targetType = document.querySelector('input[name="targetType"]:checked')?.value || 'instance';
@@ -1587,8 +1586,8 @@ async function handleChartSelectionChanged() {
   }
 
   // Because selectedStartMonth/EndMonth could be out of order in the UI drag (already sorted in plugin)
-  let tStartMonth = selectedStartMonth;
-  let tEndMonth = selectedEndMonth;
+  const tStartMonth = selectedStartMonth;
+  const tEndMonth = selectedEndMonth;
 
   // Use the already declared currentMetricData
 
@@ -1616,10 +1615,6 @@ async function handleChartSelectionChanged() {
       const temp = startIdx;
       startIdx = endIdx;
       endIdx = temp;
-
-      const tTemp = tStartMonth;
-      tStartMonth = tEndMonth;
-      tEndMonth = tTemp;
     }
 
     // 1. Update Display Text
@@ -1869,7 +1864,7 @@ function renderDayHourHeatmap(data, isHitSelected, metric) {
 
   days.forEach((day, dIdx) => {
     html += `<tr><td class="cell-label">${day}</td>`;
-    hours.forEach((h, hIdx) => {
+    hours.forEach((h) => {
       const cell = dayHourMap[dIdx][parseInt(h)];
       const avg = cell.count > 0 ? cell.sum / cell.count : 0;
 
@@ -1920,7 +1915,7 @@ function renderDayHourHeatmap(data, isHitSelected, metric) {
         const hInt = parseInt(cellElement.getAttribute('data-hour'), 10);
         const cellData = dayHourMap[dIdx][hInt].data;
         if (cellData && cellData.length > 0) {
-          showDayHourListLayer(cellData, metric, isHitSelected);
+          window.showDayHourListLayer(cellData, metric, isHitSelected);
         }
       });
     }
@@ -2132,13 +2127,13 @@ function renderOverallHeatmap(data, isHitSelected, metric) {
       const unit = isHitSelected ? 'Hits' : getMetricUnit(metric);
       const labelName = document.querySelector(`.metric-btn[data-metric="${metric}"]`)?.textContent || 'Value';
       const tooltipText = `Hits: ${countRange}<br/>${labelName}: ${timeRange} ${unit}<br/>Points: ${d.length}`;
-      showHeatmapTooltip(event, tooltipText);
+      window.showHeatmapTooltip(event, tooltipText);
     })
     .on("mouseout", function () {
       if (!d3.select(this).classed("selected-hex")) {
         d3.select(this).attr("stroke", "white").attr("stroke-width", "0.5");
       }
-      hideHeatmapTooltip();
+      window.hideHeatmapTooltip();
     })
     .on("click", function (event, d) {
       d3.selectAll(".hexagon-group path.selected-hex")
@@ -2249,7 +2244,6 @@ function updateSummaryCardsPartial(startIdx, endIdx) {
   const cuData = sliceData('concurrent_user');
   const scData = sliceData('service_count');
   const sysCpuData = sliceData('sys_cpu');
-  const maxSysCpuData = sliceData('max_sys_cpu');
   const heapUsageData = sliceData('heap_usage');
   const errRateData = sliceData('err_rate');
 
@@ -2270,7 +2264,6 @@ function updateSummaryCardsPartial(startIdx, endIdx) {
   const avgCU = calcAvg(cuData);
   const avgSC = calcAvg(scData);
   const avgSysCpu = calcAvg(sysCpuData);
-  const avgMaxSysCpu = calcAvg(maxSysCpuData);
   const avgHeapUsage = calcAvg(heapUsageData);
   const avgErrRate = calcAvg(errRateData, true);
 

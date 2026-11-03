@@ -6,7 +6,7 @@
  * PTA の detail slide layer を踏襲。
  */
 
-import { fmt, fmtInt } from './chart.js';
+import { fmtInt } from './chart.js';
 
 let overlayEl = null;
 let panelEl = null;
