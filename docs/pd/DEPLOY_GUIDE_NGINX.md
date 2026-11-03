@@ -1,7 +1,7 @@
 # Nginx 배포 가이드 (Percentile Distribution)
 
 Vite 로 빌드된 정적 웹 애플리케이션을 Nginx 환경에 배포하고 API 프록시를 설정하는 절차입니다.
-**PTA(performance-trend-analysis)와 동일한 nginx 인스턴스에 나란히 배포**할 수 있도록 구성되어 있습니다.
+본 프로젝트(jennifer-labo)는 PTA와 PD를 하나의 앱으로 빌드하므로, `dist/` 전체(랜딩 + `pta/` + `pd/` + `shared/`)를 **한 번에** 배포합니다. PD 접속 경로는 `/pd/` 입니다. PTA 관련 내용은 [PTA 배포 가이드](../pta/DEPLOY_GUIDE_NGINX.md)를 참고하세요.
 
 ## 1. 런타임 설정
 
@@ -29,17 +29,19 @@ npm install
 npm run build
 ```
 
-`dist/` 폴더가 생성됩니다. 구조는 다음과 같습니다.
+`dist/` 폴더가 생성됩니다 (`fix-paths.js` 자동 실행). 구조는 다음과 같습니다.
 
 ```
 dist/
 ├── index.html          # 랜딩 (JENNIFER Extension Labo)
-└── pd/
-    ├── index.html      # 대시보드
-    ├── help.html       # 분석 가이드
-    ├── config.js       # 런타임 설정 (배포 후 수정 가능)
-    ├── vite.svg
-    └── asserts/        # JS / CSS 번들
+├── pta/                # PTA (index.html, help.html, config.js, vite.svg, asserts/)
+├── pd/
+│   ├── index.html      # 대시보드
+│   ├── help.html       # 분석 가이드
+│   ├── config.js       # 런타임 설정 (배포 후 수정 가능)
+│   ├── vite.svg
+│   └── asserts/        # PD JS / CSS 번들
+└── shared/asserts/     # PTA·PD 공용 청크 (chart.js 등)
 ```
 
 ---
@@ -54,7 +56,7 @@ server {
     server_name your-domain.com;
 
     # [1] 정적 파일 서비스
-    #     PTA 와 병존시키는 경우, 각각을 별도 location 으로 배치합니다.
+    #     dist 전체를 root 아래에 두면 /pta/, /pd/ 가 함께 서비스됩니다.
     location / {
         root /var/www/jennifer-labo;   # dist 내용을 복사한 경로
         index index.html;
@@ -63,7 +65,7 @@ server {
 
     # [2] API 프록시 (CORS 해결 + 토큰 서버 측 주입)
     #     클라이언트(JS)는 token 파라미터를 전혀 보내지 않으며, 여기서 서버 측 토큰을 붙입니다.
-    #     PTA 와 동일 서버라면 이 location 하나를 공유하면 됩니다.
+    #     PTA·PD 가 이 location 하나를 공유합니다.
     location /api/ {
         set $args "${args}&token=<your_jennifer_api_token>";
 
@@ -93,16 +95,16 @@ server {
 > 권한 `600`, root 소유)로 분리해 `include` 로 불러오는 것을 권장합니다. 이 include 파일은 버전관리에 포함하지 않습니다.
 > 토큰 교체 시에는 nginx 설정만 갱신 후 `nginx -t && systemctl reload nginx` 를 실행하면 됩니다.
 
-### PTA 와 병존 배포하는 경우
+### 서버 디렉터리 구성
 
-`/pta/` 와 `/pd/` 는 서로 다른 디렉터리이므로 그대로 같은 root 아래 배치하면 됩니다.
-`/api/` 프록시는 두 앱이 공유합니다.
+`dist/` 의 내용을 그대로 root 에 복사하면 됩니다. `/api/` 프록시는 PTA·PD 가 공유합니다.
 
 ```
 /var/www/jennifer-labo/
-├── index.html      # 두 도구를 안내하는 랜딩 (어느 쪽 dist 의 것을 써도 무방)
-├── pta/            # performance-trend-analysis 의 dist/pta
-└── pd/             # percentile-distribution 의 dist/pd
+├── index.html      # 두 도구를 안내하는 랜딩
+├── pta/            # dist/pta
+├── pd/             # dist/pd
+└── shared/         # dist/shared (두 앱 공용 청크 — 반드시 함께 배포)
 ```
 
 ### 로컬 개발 환경 (`npm run dev`)
@@ -110,14 +112,14 @@ server {
 로컬에서는 Nginx 대신 `vite.config.js` 의 dev 서버 프록시가 동일한 역할을 합니다.
 `.env.example` 을 복사해 `.env` 를 만들고 `DEV_API_TOKEN` 에 토큰을 채워 넣으세요 (`.env` 는 git 에 커밋되지 않습니다).
 
-개발 서버 포트는 **5178** 입니다 (PTA 는 5177 이므로 동시 실행 가능).
+개발 서버는 PTA·PD 공용 포트 **5177** 하나로 동작합니다 (`http://localhost:5177/pd/`).
 
 ---
 
 ## 4. 서버 적용 및 확인
 
 ```bash
-# 파일 복사
+# 파일 복사 (dist 전체: PTA·PD 함께)
 scp -r ./dist/* user@your-server:/var/www/jennifer-labo/
 
 # 설정 반영

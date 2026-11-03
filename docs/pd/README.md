@@ -3,14 +3,14 @@
 JENNIFER5 OpenAPI 의 **X-View 트랜잭션 점 데이터**를 수집해 응답시간 분포와 백분위(P50/P90/P99)를
 시각화하는 분석 도구입니다. 평균값에 가려지는 **테일 레이턴시(Tail Latency)** 를 정량화합니다.
 
-[performance-trend-analysis (PTA)](../performance-trend-analysis/) 와 동일한 아키텍처·배포 형태를 따르는
-**JENNIFER Extension Labo** 의 형제 도구입니다.
+**JENNIFER Extension Labo**(jennifer-labo) 에서 [PTA](../pta/README.md) 와 하나의 Vite 멀티페이지 앱으로
+통합되어 함께 빌드·배포되는 도구입니다. 전체 구조는 [루트 README](../../README.md) 를 참고하세요.
 
 | | PTA | PD (본 도구) |
 | :--- | :--- | :--- |
 | 데이터 | `/api/dbmetrics/*` (집계 시계열) | `/api/transaction/time` (트랜잭션 단건) |
 | 질문 | 시간에 따라 어떻게 변해왔나 | 지금 이 사용자들은 어떤 경험을 하나 |
-| 개발 포트 | 5177 | **5178** |
+| 개발 포트 | 5177 (PTA·PD 공용 단일 포트) | 5177 (동일) |
 | 배포 경로 | `/pta/` | **`/pd/`** |
 
 ---
@@ -28,28 +28,34 @@ JENNIFER5 OpenAPI 의 **X-View 트랜잭션 점 데이터**를 수집해 응답�
 ## 프로젝트 구조
 
 ```
-percentile-distribution/
-├── index.html                  # 랜딩 페이지 (JENNIFER Extension Labo)
+jennifer-labo/                # PTA·PD 통합 Vite 멀티페이지 앱 (패키지명: jennifer-labo)
+├── index.html                # 랜딩 페이지 (JENNIFER Extension Labo)
+├── pta/                      # PTA 페이지 (docs/pta/ 참고)
 ├── pd/
-│   ├── index.html              # 대시보드 (메인 앱)
-│   └── help.html               # 분석 가이드 (팝업 헬프)
+│   ├── index.html            # 대시보드 (메인 앱)
+│   └── help.html             # 분석 가이드 (팝업 헬프)
 ├── src/
-│   ├── main.js                 # 엔트리 / 상태 관리 / 이벤트
-│   ├── api.js                  # OpenAPI 호출 · 1분 청크 순차 수집
-│   ├── stats.js                # TxStore(SoA) · 백분위 · 히스토그램 빈
-│   ├── chart.js                # Chart.js 구성 + 백분위 오버레이 플러그인
-│   ├── panel.js                # 상세 슬라이드 패널
-│   └── style.css               # 스타일시트
+│   ├── pta/                  # PTA 소스
+│   └── pd/
+│       ├── main.js           # 엔트리 / 상태 관리 / 이벤트
+│       ├── api.js            # OpenAPI 호출 · 1분 청크 순차 수집
+│       ├── stats.js          # TxStore(SoA) · 백분위 · 히스토그램 빈
+│       ├── chart.js          # Chart.js 구성 + 백분위 오버레이 플러그인
+│       ├── panel.js          # 상세 슬라이드 패널
+│       └── style.css         # 스타일시트
 ├── public/pd/
-│   ├── config.js               # 런타임 설정 (빌드 후에도 수정 가능)
+│   ├── config.js             # 런타임 설정 (window.PD_CONFIG, 빌드 후에도 수정 가능)
 │   └── vite.svg
-├── vite.config.js              # 빌드 · dev 프록시 (토큰 서버 측 주입)
-├── fix-paths.js                # 빌드 후 경로 보정
-├── .env.example                # DEV_API_TOKEN 템플릿
-├── design_specification.md     # 설계서
-├── openapi_specification.md    # OpenAPI 연동 명세서
-├── DEPLOY_GUIDE_NGINX.md       # Nginx 배포 가이드
-└── help_ja.md / help_ko.md     # 도움말 원본
+├── docs/pd/                  # 본 문서 디렉터리
+│   ├── README.md
+│   ├── design_specification.md   # 설계서
+│   ├── openapi_specification.md  # OpenAPI 연동 명세서
+│   ├── DEPLOY_GUIDE_NGINX.md     # Nginx 배포 가이드
+│   └── help_ja.md / help_ko.md   # 도움말 원본
+├── vite.config.js            # 5개 엔트리 빌드 · dev 프록시 (토큰 서버 측 주입)
+├── fix-paths.js              # 빌드 후 pta/pd HTML 에셋 경로 보정
+├── .env.example              # DEV_API_TOKEN 템플릿
+└── package.json
 ```
 
 ---
@@ -59,17 +65,17 @@ percentile-distribution/
 ```bash
 npm install
 cp .env.example .env      # DEV_API_TOKEN 에 로컬 테스트용 토큰 입력
-npm run dev               # http://localhost:5178/pd/
+npm run dev               # http://localhost:5177/pd/  (PTA·PD 공용 포트)
 ```
 
-`public/pd/config.js` 의 `BASE_URL` 을 대상 JENNIFER 서버로 맞춘 뒤,
-`vite.config.js` 의 프록시 `target` 도 동일하게 지정합니다.
+`public/pd/config.js` 의 `BASE_URL` 을 대상 JENNIFER 서버로 맞추고,
+개발 서버 프록시 `target` (`vite.config.js`, 기본값 `https://demo.jennifersoft.co.jp/`) 도 동일하게 지정합니다.
 
 토큰이 없거나 서버에 접속할 수 없으면 **모크 데이터**로 화면이 그려지며,
 상단에 「実データではありません」 경고가 표시됩니다.
 
 ```bash
-npm run build             # dist/ 생성 (fix-paths.js 자동 실행)
+npm run build             # dist/ 생성 (dist/pta, dist/pd, dist/shared — fix-paths.js 자동 실행)
 npm run preview
 ```
 

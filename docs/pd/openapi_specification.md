@@ -4,7 +4,7 @@
 JENNIFER5 OpenAPI 의 엔드포인트, 파라미터, 응답 스키마 및 제약사항을 정리한 문서입니다.
 
 - **근거 문서**: `JENNIFER5マニュアル.pdf` 부록 5.9 「URIを利用したJENNIFERデータの運用(OpenAPI)」
-- **실제 호출부**: [src/api.js](../../src/pd/api.js)
+- **실제 호출부**: [src/pd/api.js](../../src/pd/api.js)
 
 > **인증 방식**: 각 API 는 `token` 쿼리파라미터를 요구하지만, **프론트엔드 코드는 `token` 을 직접 전송하지 않습니다.**
 > `/api/` 요청이 리버스 프록시를 거쳐 업스트림(JENNIFER 뷰서버)으로 전달되는 시점에,
