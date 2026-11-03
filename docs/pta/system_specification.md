@@ -134,7 +134,7 @@
 - `secure: false` 설정으로 자가서명 인증서 환경 지원.
 - `configure` 훅에서 `proxy.on('proxyReq', ...)`을 통해, 업스트림으로 요청이 전달되기 직전에 `.env`의 `DEV_API_TOKEN` 값을 `token` 쿼리파라미터로 주입 (클라이언트 코드는 토큰을 모름).
 - 같은 훅에서 `proxy.on('proxyRes', ...)`으로 CORS 관련 헤더(`Cross-Origin-Resource-Policy` 등) 주입.
-- 운영 환경(nginx)에서는 `set $args "${args}&token=<token>";`로 동일한 역할을 수행 (`DEPLOY_GUIDE_NGINX.md` 참고).
+- 운영 환경(nginx)에서는 `map`으로 만든 쿼리(`$args&token=<token>`)를 `set $args`로 적용해 동일한 역할을 수행. 토큰은 별도 파일로 분리하고, API 화이트리스트·Basic 인증·HTTPS를 함께 적용 ([공통 배포 가이드](../DEPLOY_GUIDE_NGINX.md) 참고).
 
 ---
 

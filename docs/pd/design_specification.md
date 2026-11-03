@@ -327,8 +327,8 @@ jennifer-labo/                      # PTA・PD 統合 Vite マルチページア
 - `proxyRes` フックで CORS 関連ヘッダを注入 (PTA と共通の設定)
 
 ### 8.3 本番配布 (nginx)
-[DEPLOY_GUIDE_NGINX.md](./DEPLOY_GUIDE_NGINX.md) 参照。
-- `dist/` 全体 (ランディング + `pta/` + `pd/` + `shared/`) を一括配布し、`location /` 静的配信 + `location /api/` プロキシで `set $args "${args}&token=<token>";`
+[DEPLOY_GUIDE_NGINX.md](../DEPLOY_GUIDE_NGINX.md) (共通ガイド) 参照。
+- `dist/` 全体 (ランディング + `pta/` + `pd/` + `shared/`) を一括配布し、`location /` 静的配信 + 許可リスト方式の `/api/` プロキシでサーバ側からトークンを注入 (`map` + `set $args`)。HTTPS / Basic 認証 / GET 限定 / `transaction/time` のレート制限を併用
 - `/pta/`, `/pd/` は同一 `dist` に含まれ、`/api/` プロキシも共有
 
 ---

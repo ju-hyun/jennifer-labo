@@ -132,10 +132,11 @@ npm run build
 ./deploy.sh        # 현재 dist/ 를 그대로 배포
 ```
 `deploy.sh` 는 서버·SSH 정보를 포함하므로 `.gitignore` 대상입니다. nginx 의 API 프록시 및 토큰 서버측 주입,
-HTTPS 설정 등 상세 절차는 각 도구의 배포 가이드를 참고하세요.
+HTTPS 설정 등 상세 절차는 공통 배포 가이드를 참고하세요. 운영 배포에는 **HTTPS, Basic 인증, API 화이트리스트**
+적용을 권장합니다 (프록시가 서버의 API 토큰을 자동으로 붙이므로, 접근 제한이 없으면 토큰이 공개된 것과 같습니다).
 
-- [PTA 배포 가이드](./docs/pta/DEPLOY_GUIDE_NGINX.md)
-- [PD 배포 가이드](./docs/pd/DEPLOY_GUIDE_NGINX.md)
+- [Nginx 배포 가이드 (공통)](./docs/DEPLOY_GUIDE_NGINX.md) — 기준 문서
+- [PTA 배포 가이드](./docs/pta/DEPLOY_GUIDE_NGINX.md) · [PD 배포 가이드](./docs/pd/DEPLOY_GUIDE_NGINX.md) — 도구별 고유 내용
 
 ---
 
