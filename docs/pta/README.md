@@ -9,7 +9,7 @@ JENNIFER5 OpenAPI를 활용한 성능 추이 분석 도구입니다.
 
 - **Vite** (빌드 도구 / 개발 서버)
 - **Chart.js** (메인 시계열 차트, npm 의존성)
-- **D3.js / d3-hexbin** (Overall 히트맵, 요일×시간대 히트맵, CDN 로드)
+- **d3-selection / d3-scale / d3-array / d3-hexbin** (Overall 히트맵, 요일×시간대 히트맵, npm 의존성으로 번들)
 - **Pretendard JP** (웹 폰트, CDN 로드)
 
 ---
@@ -29,7 +29,7 @@ jennifer-labo/                # PTA·PD 통합 Vite 멀티페이지 앱 (패키�
 │   │   └── style.css         # 전체 스타일시트
 │   └── pd/                   # PD 소스
 ├── public/pta/
-│   ├── config.js             # 런타임 설정 파일 (BASE_URL, API_DOMAIN — 빌드 후에도 수정 가능)
+│   ├── config.js             # 런타임 설정 파일 (API_DOMAIN — 빌드 후에도 수정 가능)
 │   └── vite.svg              # 파비콘
 ├── docs/pta/                 # 본 문서 디렉터리
 │   ├── README.md
@@ -60,15 +60,17 @@ npm install
 
 ```javascript
 window.PTA_CONFIG = {
-  BASE_URL: 'https://your-jennifer-server/',
   API_DOMAIN: ''
 };
 ```
 
 | 변수명 | 설명 |
 |---|---|
-| `BASE_URL` | API 프록시 대상 주소 |
 | `API_DOMAIN` | 프록시 없이 API 서버에 직접 요청할 때 사용 (Nginx 배포 시 비워둠) |
+
+| `ALLOW_MOCK` | (선택) 서버 접속 실패 시 모크 데이터를 표시. 기본은 개발 서버에서만 허용. 운영에서는 지정하지 마세요 |
+
+> 이전 버전의 `BASE_URL` 은 사용되지 않습니다(남아 있어도 무시). 개발 서버 프록시 대상은 `.env` 의 `DEV_API_TARGET` 으로 지정합니다.
 
 > [!NOTE]
 > `dist/pta/config.js`를 수정한 후 브라우저를 새로고침하면 변경사항이 즉시 반영됩니다. 다시 빌드할 필요가 없습니다.
@@ -128,7 +130,7 @@ dist/
 ```
 
 > [!IMPORTANT]
-> `BASE_URL`/`API_DOMAIN` 설정은 `public/pta/config.js`에서 관리하며, 빌드 후에도 `dist/pta/config.js`를 수정하여 즉시 반영할 수 있습니다.
+> `API_DOMAIN` 설정은 `public/pta/config.js`에서 관리하며, 빌드 후에도 `dist/pta/config.js`를 수정하여 즉시 반영할 수 있습니다.
 > API 토큰은 이 파일이 아닌 **nginx 설정**에서 관리합니다 (아래 참고).
 
 ### Nginx 배포

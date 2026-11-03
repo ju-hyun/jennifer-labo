@@ -14,9 +14,9 @@ JENNIFER5 OpenAPI를 활용한 분석 도구 모음입니다. 하나의 Vite 멀
 
 ## 기술 스택
 
-- **Vite 4** (빌드 / 개발 서버 / API 프록시)
+- **Vite 8** (빌드 / 개발 서버 / API 프록시) — Node.js `^20.19.0` 또는 `>=22.12.0` 필요
 - **Chart.js 4** (차트, npm 의존성 — PTA·PD가 번들 청크를 공유)
-- **D3.js / d3-hexbin** (PTA 히트맵, CDN 로드)
+- **d3-selection / d3-scale / d3-array / d3-hexbin** (PTA 히트맵, npm 의존성으로 번들 — 외부망 없이도 동작)
 - **Pretendard JP** (웹 폰트, CDN 로드)
 
 ---
@@ -55,7 +55,7 @@ dist/
 ├── index.html                # 랜딩
 ├── pta/  (index.html, help.html, config.js, asserts/)
 ├── pd/   (index.html, help.html, config.js, asserts/)
-└── shared/asserts/           # PTA·PD 공용 청크 (chart.js 등) 및 CSS
+└── shared/asserts/           # PTA·PD 공용 청크 (chart.js 등). CSS 는 각 앱의 asserts/ 아래
 ```
 
 ---
@@ -74,23 +74,27 @@ npm install
 
 ```javascript
 // public/pta/config.js
-window.PTA_CONFIG = { BASE_URL: 'https://your-jennifer-server/', API_DOMAIN: '' };
+window.PTA_CONFIG = { API_DOMAIN: '' };
 
 // public/pd/config.js
 window.PD_CONFIG = {
-  BASE_URL: 'https://your-jennifer-server/',
   API_DOMAIN: '',
   CHUNK_WAIT_MS: 0,     // 1분 청크 간 웨이트(ms). 데이터서버 부하가 우려되면 100~500 권장
-  MAX_POINTS: 300000    // 누적 트랜잭션 건수의 안전 상한
+  MAX_POINTS: 300000,   // 누적 트랜잭션 건수의 안전 상한
+  CONFIRM_CHUNKS: 120   // 이 횟수(=분)를 넘는 조회는 실행 전에 확인창을 표시
 };
 ```
 
 | 변수명 | 대상 | 설명 |
 |---|---|---|
-| `BASE_URL` | PTA, PD | API 프록시 대상 주소 |
 | `API_DOMAIN` | PTA, PD | 프록시 없이 API 서버에 직접 요청할 때 사용 (Nginx 배포 시 비워둠) |
 | `CHUNK_WAIT_MS` | PD | 트랜잭션 수집 시 1분 청크 간 대기 시간 |
 | `MAX_POINTS` | PD | 누적 트랜잭션 건수 상한 |
+| `CONFIRM_CHUNKS` | PD | 조회가 이 횟수(1분 = 1회)를 넘으면 실행 전에 확인창 표시 (기본 120) |
+| `ALLOW_MOCK` | PTA, PD | 서버 접속 실패 시 **모크 데이터**를 표시할지 여부 (기본: 개발 서버에서만 허용). 운영에서는 지정하지 마세요 — 실데이터로 오인될 수 있습니다 |
+
+> 이전 버전의 `BASE_URL` 은 사용되지 않습니다(남아 있어도 무시). 개발 서버 프록시 대상은 `.env` 의 `DEV_API_TARGET`
+> (기본: 데모 서버), 운영은 nginx 설정으로 지정합니다.
 
 ### 3. API 토큰 설정 (로컬 개발)
 
@@ -113,9 +117,23 @@ npm run dev
 - PTA 대시보드: `http://localhost:5177/pta/`
 - PD 대시보드: `http://localhost:5177/pd/`
 
+> 개발 서버는 기본으로 **본인 PC(localhost)에서만** 접속됩니다. 프록시가 `DEV_API_TOKEN`을 자동으로 붙이기 때문에
+> 외부에 열면 같은 네트워크의 누구나 그 토큰으로 API를 호출할 수 있어서입니다. VM/컨테이너 밖에서 접속해야 하면
+> `.env`에 `DEV_HOST=0.0.0.0`을 지정하세요. 업스트림 TLS 인증서는 기본으로 검증하며, 자가 서명 인증서 서버를 쓸 때만
+> `DEV_INSECURE_TLS=1`로 끕니다 (자세한 내용은 `.env.example`).
+
 개발 서버의 `/api` 요청은 `https://demo.jennifersoft.co.jp/` 로 프록시됩니다 (`vite.config.js`).
 
 ---
+
+## 테스트
+
+```bash
+npm test      # Node 내장 테스트 러너 (node --test). 추가 의존성 없음
+```
+
+`tests/` 에는 PD의 API 계층(청크 분할·재시도·중단)과 통계 엔진(필터·히스토그램·퍼센타일)의 회귀 테스트가 있습니다.
+GitHub Actions(`.github/workflows/ci.yml`)가 push/PR 마다 테스트·빌드·`npm audit`(운영 의존성)을 실행합니다.
 
 ## 빌드 및 배포
 
@@ -132,10 +150,11 @@ npm run build
 ./deploy.sh        # 현재 dist/ 를 그대로 배포
 ```
 `deploy.sh` 는 서버·SSH 정보를 포함하므로 `.gitignore` 대상입니다. nginx 의 API 프록시 및 토큰 서버측 주입,
-HTTPS 설정 등 상세 절차는 각 도구의 배포 가이드를 참고하세요.
+HTTPS 설정 등 상세 절차는 공통 배포 가이드를 참고하세요. 운영 배포에는 **HTTPS, Basic 인증, API 화이트리스트**
+적용을 권장합니다 (프록시가 서버의 API 토큰을 자동으로 붙이므로, 접근 제한이 없으면 토큰이 공개된 것과 같습니다).
 
-- [PTA 배포 가이드](./docs/pta/DEPLOY_GUIDE_NGINX.md)
-- [PD 배포 가이드](./docs/pd/DEPLOY_GUIDE_NGINX.md)
+- [Nginx 배포 가이드 (공통)](./docs/DEPLOY_GUIDE_NGINX.md) — 기준 문서
+- [PTA 배포 가이드](./docs/pta/DEPLOY_GUIDE_NGINX.md) · [PD 배포 가이드](./docs/pd/DEPLOY_GUIDE_NGINX.md) — 도구별 고유 내용
 
 ---
 

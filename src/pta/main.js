@@ -1,7 +1,34 @@
 import Chart from 'chart.js/auto';
+// d3 は CDN ではなく npm 依存として同梱する (外部ネットワーク遮断環境でも動作し、
+// package-lock.json の整合性ハッシュでバージョンが固定されるため)。必要なモジュールのみ読み込む。
+import { select, selectAll } from 'd3-selection';
+import { scaleLinear, scaleSequential } from 'd3-scale';
+import { max, min } from 'd3-array';
+import { hexbin } from 'd3-hexbin';
+
+// 既存コードの `d3.xxx` 呼び出しをそのまま使うための名前空間
+const d3 = { select, selectAll, scaleLinear, scaleSequential, max, min, hexbin };
 
 // Runtime configuration (pta/config.js에서 window.PTA_CONFIG로 로드)
 const PTA_CFG = window.PTA_CONFIG || {};
+
+/**
+ * 接続失敗時にダミー(モック)データを表示してよいか。
+ * 運用環境で実データと誤認されないよう、開発ビルドか、config.js の ALLOW_MOCK: true の明示指定時のみ許可する。
+ */
+const MOCK_ALLOWED = !!(import.meta.env?.DEV || PTA_CFG.ALLOW_MOCK === true);
+
+/** 画面上部の通知バーに表示する (message が空なら隠す) */
+function showNotice(message, level = 'info') {
+  const bar = document.getElementById('noticeBar');
+  if (!bar) return;
+  if (!message) {
+    bar.classList.add('hidden');
+    return;
+  }
+  bar.textContent = message;
+  bar.className = `notice notice-${level}`;
+}
 
 // Global variables
 const API_BASE = (PTA_CFG.API_DOMAIN || '') + '/api/dbmetrics';
@@ -91,13 +118,9 @@ Chart.defaults.plugins.tooltip.padding = 10;
 Chart.defaults.plugins.tooltip.cornerRadius = 4;
 
 document.addEventListener('DOMContentLoaded', async () => {
-  // Validate configuration
-  const missingVars = [];
-  if (!PTA_CFG.BASE_URL) missingVars.push('BASE_URL');
-
-  if (missingVars.length > 0) {
-    showConfigError(`${missingVars.join(' and ')} is not defined in pta/config.js file.`);
-    return;
+  // config.js が無くても既定値 (同一オリジンの /api) で動作するため、起動はブロックしない
+  if (!window.PTA_CONFIG) {
+    console.warn('PTA_CONFIG が未設定です。pta/config.js が index.html と同じ場所に配置されているか確認してください。');
   }
 
   // Initial load: Load domains first, then data
@@ -106,8 +129,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   // If a configuration/auth error was already shown by loadDomains, stop here
   if (document.querySelector('.config-error-overlay')) return;
 
-  // Even if domains failed to load (CORS/Network error), try to load data (which will trigger mock data fallback)
-  loadData();
+  // 初回のデータ読み込みは loadDomains() 内の updateSelectedPath() -> loadInstances().then(loadData)
+  // で行われる (ドメイン取得失敗時のモックドメインも同経路)。ここで loadData() を重ねて呼ぶと
+  // 約 100 件の API リクエストが二重に発行されるため呼ばない。
 
   // Target Type Toggle
   typeRadios.forEach(radio => {
@@ -226,6 +250,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 
 function showConfigError(message, title = 'Configuration Error') {
+  // 同時多発するリクエストが全て 401 になっても、オーバーレイは 1 つだけ表示する
+  if (document.querySelector('.config-error-overlay') || showConfigError.pending) return;
+  showConfigError.pending = true;
+
   const overlay = document.createElement('div');
   overlay.className = 'config-error-overlay';
   overlay.innerHTML = `
@@ -234,7 +262,7 @@ function showConfigError(message, title = 'Configuration Error') {
       <h2>${title}</h2>
       <p>${message}</p>
       <div class="config-error-box">
-        <code>Please check your <strong>.env</strong> file settings.</code>
+        <code>Please check <strong>pta/config.js</strong> and the server-side API proxy (token) settings.</code>
       </div>
     </div>
   `;
@@ -331,7 +359,16 @@ async function loadDomains() {
 
     if (document.querySelector('.config-error-overlay')) return false;
 
-    // Fallback to mock domains with hierarchy
+    if (!MOCK_ALLOWED) {
+      showNotice('ドメイン一覧を取得できませんでした。ネットワークとAPIプロキシの設定をご確認ください。', 'error');
+      domainTree = [];
+      currentSelectedPath = [];
+      renderHierarchicalSelector();
+      return false;
+    }
+
+    // 開発時のみ: モックのドメイン階層で画面を確認できるようにする
+    showNotice('ドメイン一覧を取得できなかったため、モックのドメインで表示しています。実データではありません。', 'warn');
     const mockFlatDomains = [
       { domainId: '1000', name: 'REALTIME, ANALYSIS', groupHierarchy: ['JENNIFER DEMO', 'MSA'] },
       { domainId: '1001', name: 'MSA-2nd', groupHierarchy: ['JENNIFER DEMO', 'MSA'] },
@@ -356,7 +393,7 @@ function buildDomainTree(flatDomains) {
 
   flatDomains.forEach(domain => {
     let currentLevel = tree;
-    const hierarchy = domain.groupHierarchy || ['未分類ドメイン'];
+    const hierarchy = domain.groupHierarchy?.length ? domain.groupHierarchy : ['未分類ドメイン'];
 
     hierarchy.forEach((groupName, index) => {
       let group = currentLevel.find(item => item.name === groupName && item.type === 'group');
@@ -414,6 +451,14 @@ function renderHierarchicalSelector() {
   const container = document.getElementById('breadcrumbContainer');
   if (!container) return;
   container.innerHTML = '';
+
+  if (currentSelectedPath.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'breadcrumb-item loading';
+    empty.textContent = '選択できるドメインがありません';
+    container.appendChild(empty);
+    return;
+  }
 
   currentSelectedPath.forEach((item, index) => {
     // Add separator if not the first item
@@ -506,9 +551,11 @@ function createPopover(items, onSelect, level = 0, currentLevelPath = []) {
         <span class="popover-item-icon">
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
         </span>
-        <span>${item.name}</span>
+        <span class="popover-item-name"></span>
       </div>
     `;
+    // ドメイン/グループ名は API 由来の文字列なので、HTML として解釈させず textContent で入れる
+    el.querySelector('.popover-item-name').textContent = item.name;
 
     el.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -587,11 +634,14 @@ async function loadInstances(domainId) {
   } catch (error) {
     console.error(`Failed to load instances for domain ${domainId}. URL: ${urlString}`, error);
 
-    // Fallback to mock instances
-    const mockInstances = [
-      { instanceId: '1', name: `Instance-${domainId}-1` },
-      { instanceId: '2', name: `Instance-${domainId}-2` }
-    ];
+    // 本番ではダミーのインスタンスを出さない (実在しないインスタンスを選ばせないため)
+    const mockInstances = MOCK_ALLOWED
+      ? [
+        { instanceId: '1', name: `Instance-${domainId}-1` },
+        { instanceId: '2', name: `Instance-${domainId}-2` }
+      ]
+      : [];
+    if (!MOCK_ALLOWED) showNotice('インスタンス一覧を取得できませんでした。', 'warn');
 
     instanceSelect.innerHTML = '<option value="">全体インスタンス</option>';
     mockInstances.forEach(instance => {
@@ -631,7 +681,7 @@ async function fetchBusinesses(domainId) {
       option.value = biz.businessId;
 
       // Indentation based on businessIndex (e.g. "0.0" -> 1 level)
-      const dotCount = (biz.businessIndex.match(/\./g) || []).length;
+      const dotCount = (String(biz.businessIndex ?? '').match(/\./g) || []).length;
       const indent = '\u00A0\u00A0'.repeat(dotCount); // 2 spaces per level
 
       option.textContent = indent + biz.name;
@@ -643,7 +693,12 @@ async function fetchBusinesses(domainId) {
   }
 }
 
+// 連続呼び出し時、最後に開始した読み込みのみが画面を更新するための世代番号
+let loadDataSeq = 0;
+
 async function loadData() {
+  const seq = ++loadDataSeq;
+  const isStale = () => seq !== loadDataSeq;
   const loadingOverlay = document.getElementById('loadingOverlay');
   if (loadingOverlay) loadingOverlay.classList.remove('hidden');
 
@@ -684,6 +739,8 @@ async function loadData() {
     ])).filter(m => m !== 'err_rate');
     const fetchPromisesMap = {};
     metricsToFetch.forEach(m => fetchPromisesMap[m] = []);
+    let totalRequests = 0;
+    let failedRequests = 0;
 
     for (let i = 11; i >= 0; i--) {
       const monthStart = new Date(today.getFullYear(), today.getMonth() - i, 1);
@@ -691,10 +748,12 @@ async function loadData() {
       const monthEnd = new Date(today.getFullYear(), today.getMonth() - i + 1, 1);
 
       metricsToFetch.forEach(m => {
+        totalRequests++;
         fetchPromisesMap[m].push(
           fetchMetricData(domainId, targetId, targetType, formatDateParam(monthStart), formatDateParam(monthEnd), 1440, m)
             .catch(err => {
               console.warn(`Failed to fetch partially for ${formatDateParam(monthStart)} metric ${m}`, err);
+              failedRequests++;
               return [];
             })
         );
@@ -704,6 +763,25 @@ async function loadData() {
     const results = {};
     for (const m of metricsToFetch) {
       results[m] = await Promise.all(fetchPromisesMap[m]);
+    }
+
+    // 待っている間に別の読み込みが始まっていたら、古い結果は破棄する
+    if (isStale()) return;
+
+    // 失敗したリクエストがあれば画面で知らせる (月単位で欠けたまま気付かれないのを防ぐ)
+    if (failedRequests === 0) {
+      showNotice('');
+    } else if (failedRequests === totalRequests) {
+      if (MOCK_ALLOWED) {
+        mockDataOnFailPartial();
+        return;
+      }
+      showNotice('JENNIFERサーバからデータを取得できませんでした。ネットワークとAPIプロキシの設定をご確認ください。', 'error');
+    } else {
+      showNotice(
+        `${failedRequests}/${totalRequests} 件のAPIリクエストが失敗しました。一部の期間のデータが欠けている可能性があります。`,
+        'warn'
+      );
     }
 
     // 병합 및 시간순 정렬 및 중복 제거
@@ -730,12 +808,13 @@ async function loadData() {
     // Calculate Error Rate (err_rate)
     const countData = yearlyData['service_count'] || [];
     const errCountData = yearlyData['service_err_count'] || [];
-    yearlyData['err_rate'] = countData.map((item, idx) => {
-      const errItem = errCountData[idx];
+    // 配列インデックスではなく time をキーに突き合わせる (月単位の取得失敗で系列がずれるため)。
+    // リクエスト 0 件の日は 0% ではなく null (欠測) とし、平均に 0 として混ざらないようにする。
+    const errCountByTime = new Map(errCountData.map(e => [e.time, e.value]));
+    yearlyData['err_rate'] = countData.map((item) => {
       const count = item.value || 0;
-      const errCount = (errItem && errItem.value) ? errItem.value : 0;
-      const rate = count > 0 ? (errCount / count) * 100 : 0;
-      return { time: item.time, value: rate };
+      const errCount = errCountByTime.get(item.time) || 0;
+      return { time: item.time, value: count > 0 ? (errCount / count) * 100 : null };
     });
 
     // Update UI Elements for Chart
@@ -755,9 +834,13 @@ async function loadData() {
 
   } catch (error) {
     console.error('Data loading failed:', error);
-    mockDataOnFailPartial();
+    if (MOCK_ALLOWED) {
+      mockDataOnFailPartial();
+    } else {
+      showNotice('データの処理中にエラーが発生しました。', 'error');
+    }
   } finally {
-    if (loadingOverlay) loadingOverlay.classList.add('hidden');
+    if (loadingOverlay && !isStale()) loadingOverlay.classList.add('hidden');
   }
 }
 
@@ -1267,6 +1350,7 @@ let currentMetricLabelCache = '';
 function calculateMonthlyAverages(data, label) {
   currentMetricLabelCache = label;
   monthlyAveragesCache = {};
+  monthlyAveragesVersion++;
 
   const monthData = {};
   const today = new Date();
@@ -1277,7 +1361,9 @@ function calculateMonthlyAverages(data, label) {
   // Group data by month, but ONLY up to today for the current month/future
   data.forEach(item => {
     if (item.time > todayStr) return; // Future data (zeros) should not be averaged
-    if (item.value === 0 || item.value === null || item.value === undefined) return; // Exclude 0 or missing values
+    // Exclude 0 or missing values (エラー率のみ 0% が正常値なので 0 を残す)
+    if (item.value === null || item.value === undefined) return;
+    if (item.value === 0 && currentMetric !== 'err_rate') return;
 
     const lbl = parseDateString(item.time);
     const month = lbl.split('/')[0];
@@ -1353,16 +1439,29 @@ function calculateMonthlyAverages(data, label) {
   });
 }
 
+// 統計グリッドの再描画をスキップするための署名と、月別平均の更新世代
+let statsGridSig = '';
+let monthlyAveragesVersion = 0;
+
 function updateChartStatsGrid(labels, chart) {
   const avgWrapper = document.getElementById('statsAvgValues');
   const rateWrapper = document.getElementById('statsRateValues');
   if (!avgWrapper || !rateWrapper || !chart) return;
 
-  avgWrapper.innerHTML = '';
-  rateWrapper.innerHTML = '';
-
   const { chartArea, scales: { x } } = chart;
   if (!chartArea) return;
+
+  // マウス移動などで afterDraw が頻繁に呼ばれるが、データ・サイズ・位置が同じなら DOM は作り直さない
+  const offsetX = Math.round(chart.canvas.getBoundingClientRect().left - avgWrapper.getBoundingClientRect().left);
+  const sig = [
+    labels.length, labels[0], labels[labels.length - 1],
+    Math.round(chartArea.left), Math.round(chartArea.right), offsetX, monthlyAveragesVersion
+  ].join('|');
+  if (sig === statsGridSig && avgWrapper.childElementCount > 0) return;
+  statsGridSig = sig;
+
+  avgWrapper.innerHTML = '';
+  rateWrapper.innerHTML = '';
 
   // Re-calculate month zones to get exact center positions
   const monthZones = [];
@@ -1439,6 +1538,13 @@ function updateChartStatsGrid(labels, chart) {
 }
 
 
+// キーボード操作で選択範囲が連続して変わるとき、API 再取得を最後の 1 回にまとめる
+let selectionTimer = null;
+function scheduleSelectionChanged(delay = 150) {
+  clearTimeout(selectionTimer);
+  selectionTimer = setTimeout(handleChartSelectionChanged, delay);
+}
+
 // Selection Change Handler
 async function handleChartSelectionChanged() {
   const rangeDisplay = document.getElementById('selectedRangeDisplay');
@@ -1462,7 +1568,7 @@ async function handleChartSelectionChanged() {
       const startStr = currentMetricData[0].time;
       const endStr = currentMetricData[currentMetricData.length - 1].time;
 
-      rangeDisplay.innerHTML = `${formatYMDLocal(startStr)} <span style="color: var(--text-secondary); margin: 0 4px; font-weight: 500;">-</span> ${formatYMDLocal(endStr)}`;
+      rangeDisplay.innerHTML = `${escapeHtml(formatYMDLocal(startStr))} <span style="color: var(--text-secondary); margin: 0 4px; font-weight: 500;">-</span> ${escapeHtml(formatYMDLocal(endStr))}`;
 
       const sYear = parseInt(startStr.substring(0, 4), 10);
       const sMonth = parseInt(startStr.substring(4, 6), 10) - 1;
@@ -1520,7 +1626,7 @@ async function handleChartSelectionChanged() {
     const startStr = currentMetricData[startIdx].time.substring(0, 8); // yyyymmdd
     const endStr = currentMetricData[endIdx].time.substring(0, 8);
 
-    rangeDisplay.innerHTML = `${formatYMDLocal(startStr)} <span style="color: var(--text-secondary); margin: 0 4px; font-weight: 500;">-</span> ${formatYMDLocal(endStr)}`;
+    rangeDisplay.innerHTML = `${escapeHtml(formatYMDLocal(startStr))} <span style="color: var(--text-secondary); margin: 0 4px; font-weight: 500;">-</span> ${escapeHtml(formatYMDLocal(endStr))}`;
 
     // 2. Filter data for Summary Cards
     updateSummaryCardsPartial(startIdx, endIdx);
@@ -1542,7 +1648,11 @@ async function handleChartSelectionChanged() {
   }
 }
 
+// 連続して選択範囲が変わったとき、古いリクエストの結果で画面を上書きしないための世代番号
+let heatmapSeq = 0;
+
 async function reloadHeatmaps(domainId, targetId, targetType, startDate, endDate) {
+  const seq = ++heatmapSeq;
   try {
     const fetchEndDate = new Date(endDate);
     fetchEndDate.setDate(fetchEndDate.getDate() + 1);
@@ -1587,6 +1697,7 @@ async function reloadHeatmaps(domainId, targetId, targetType, startDate, endDate
     const timeResults = await Promise.all(timePromises);
     const countResults = await Promise.all(countPromises);
     const errCountResults = (currentMetric === 'err_rate') ? await Promise.all(errCountPromises) : [];
+    if (seq !== heatmapSeq) return;
 
     let heatmapTimeData = [];
     timeResults.forEach(res => heatmapTimeData.push(...res));
@@ -1602,9 +1713,13 @@ async function reloadHeatmaps(domainId, targetId, targetType, startDate, endDate
       heatmapErrCountData.sort((a, b) => String(a.time).localeCompare(String(b.time)));
     }
 
-    const combinedHeatmapData = heatmapTimeData.map((timeItem, idx) => {
-      const countItem = heatmapCountData[idx];
-      const errCountItem = (currentMetric === 'err_rate') ? heatmapErrCountData[idx] : null;
+    // 配列インデックスではなく time をキーに突き合わせる (チャンク取得失敗・欠測でずれるため)
+    const countByTime = new Map(heatmapCountData.map(c => [c.time, c]));
+    const errCountByTime = new Map(heatmapErrCountData.map(e => [e.time, e]));
+
+    const combinedHeatmapData = heatmapTimeData.map((timeItem) => {
+      const countItem = countByTime.get(timeItem.time);
+      const errCountItem = (currentMetric === 'err_rate') ? errCountByTime.get(timeItem.time) : null;
 
       let value = timeItem.value;
       if (currentMetric === 'service_count') {
@@ -1662,10 +1777,12 @@ function renderDayHourHeatmap(data, isHitSelected, metric) {
     const date = new Date(year, month, day);
     const dayIdx = date.getDay();
 
-    // Map each item in order to hour 0, 1, 2, ...
-    // API returns 24 items per day in chronological order
+    // 時刻は time 文字列 (yyyyMMddHH...) の HH から求める。
+    // 欠測の時間帯や当日の部分データがあっても、セルが隣へずれないようにするため。
+    // HH が取れない形式の場合のみ、従来どおり日内の順序で代用する。
     items.forEach((item, posInDay) => {
-      const hour = posInDay % 24;
+      const hh = parseInt(String(item.time).substring(8, 10), 10);
+      const hour = Number.isInteger(hh) && hh >= 0 && hh < 24 ? hh : posInDay % 24;
       if (item.count > 0) {
         dayHourMap[dayIdx][hour].sum += item.value;
         dayHourMap[dayIdx][hour].count++;
@@ -1729,7 +1846,8 @@ function renderDayHourHeatmap(data, isHitSelected, metric) {
   const legendDangerText = document.getElementById('legendDangerText');
 
   if (legendGoodText && legendWarningText && legendDangerText) {
-    const unit = isHitSelected ? 'ms' : getMetricUnit(metric);
+    // ヒートマップのセル値は選択中の指標そのもの (ヒット数選択時はヒット数) なので、単位も指標に従う
+    const unit = getMetricUnit(metric);
     if (allAverages.length > 0) {
       const formatThreshold = (val) => val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
       legendGoodText.innerHTML = `安定 <span style="font-size: 0.65rem; color: #94a3b8; margin-left: 2px;">(≤ ${formatThreshold(goodThreshold)}${unit})</span>`;
@@ -1774,7 +1892,7 @@ function renderDayHourHeatmap(data, isHitSelected, metric) {
         bgColor = colorScale(avg);
       }
 
-      const unit = isHitSelected ? 'ms' : getMetricUnit(metric);
+      const unit = getMetricUnit(metric);
       const formattedAvg = avg.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
       const tooltipText = cell.count > 0 ? `${day} ${h}:00<br/>Avg: ${formattedAvg}${unit}` : 'No data';
       html += `<td style="background-color: ${bgColor}; cursor: ${cell.count > 0 ? 'pointer' : 'default'};" 
@@ -1820,7 +1938,10 @@ window.showDayHourListLayer = function (binData, metric, isHitSelected) {
 
   // Set Metric Header Unit
   const unit = isHitSelected ? 'ms' : getMetricUnit(metric);
-  const labelName = document.querySelector(`.metric-btn[data-metric="${metric}"]`)?.textContent || 'Value';
+  // 一覧に表示する値は yValue (ヒット数選択時は応答時間) なので、見出しもそれに合わせる
+  const labelName = isHitSelected
+    ? '応答時間'
+    : (document.querySelector(`.metric-btn[data-metric="${metric}"]`)?.textContent || 'Value');
   metricHeader.textContent = `${labelName}`; // Kept short, unit included in text
 
   // Sort chronologically
@@ -1841,8 +1962,8 @@ window.showDayHourListLayer = function (binData, metric, isHitSelected) {
     const dateFormatted = `${yyyy}.${MM}.${dd}`;
 
     const value = item.yValue !== undefined ? item.yValue : item.value;
-    const metricFormatted = `${formatVal(value)}${unit}`;
-    const barWidthPercent = (value / maxVal) * 100;
+    const metricFormatted = escapeHtml(`${formatVal(value)}${unit}`);
+    const barWidthPercent = Number.isFinite(value / maxVal) ? (value / maxVal) * 100 : 0;
 
     // Horizontal Bar with value
     const barHtml = `
@@ -1857,7 +1978,7 @@ window.showDayHourListLayer = function (binData, metric, isHitSelected) {
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td>${index + 1}</td>
-      <td>${dateFormatted}</td>
+      <td>${escapeHtml(dateFormatted)}</td>
       <td>${barHtml}</td>
     `;
 
@@ -2103,10 +2224,12 @@ function updateSummaryCardsPartial(startIdx, endIdx) {
     String(today.getMonth() + 1).padStart(2, '0') +
     String(today.getDate()).padStart(2, '0');
 
-  const calcAvg = data => {
+  // 0 は「データなし」として除外するが、エラー率の 0% は正常値なので除外しない
+  // (除外すると平均エラー率が過大になる)。リクエスト 0 件の日は null なので別途除外される。
+  const calcAvg = (data, keepZero = false) => {
     const validData = data.filter(d =>
       d.time <= todayStr &&
-      d.value !== 0 && d.value !== null && d.value !== undefined
+      (keepZero || d.value !== 0) && d.value !== null && d.value !== undefined
     );
     return validData.length ? validData.reduce((s, d) => s + d.value, 0) / validData.length : 0;
   };
@@ -2149,7 +2272,7 @@ function updateSummaryCardsPartial(startIdx, endIdx) {
   const avgSysCpu = calcAvg(sysCpuData);
   const avgMaxSysCpu = calcAvg(maxSysCpuData);
   const avgHeapUsage = calcAvg(heapUsageData);
-  const avgErrRate = calcAvg(errRateData);
+  const avgErrRate = calcAvg(errRateData, true);
 
   document.getElementById('avgResponseTime').innerHTML = `${Math.round(avgST).toLocaleString()} <span class="unit">ms</span>`;
   document.getElementById('avgTps').textContent = avgSR.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -2200,6 +2323,10 @@ window.addEventListener('keydown', (e) => {
   }
 
   if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+  // 入力欄・セレクトボックスの操作や修飾キー付きの操作は奪わない
+  const tag = e.target?.tagName;
+  if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || e.target?.isContentEditable) return;
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
   if (!mainChartInstance || !selectedStartMonth || !selectedEndMonth) return;
 
   const labels = mainChartInstance.data.labels;
@@ -2267,7 +2394,7 @@ window.addEventListener('keydown', (e) => {
         }
       }
     }
-    handleChartSelectionChanged();
+    scheduleSelectionChanged();
     mainChartInstance.update();
   } else {
     // Shift the entire range
@@ -2276,11 +2403,18 @@ window.addEventListener('keydown', (e) => {
     if (newStartIdx >= 0 && newEndIdx < uniqueMonths.length) {
       selectedStartMonth = uniqueMonths[newStartIdx];
       selectedEndMonth = uniqueMonths[newEndIdx];
-      handleChartSelectionChanged();
+      scheduleSelectionChanged();
       mainChartInstance.update();
     }
   }
 });
+
+// API 由来の文字列を innerHTML に埋め込む際のエスケープ
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (c) =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])
+  );
+}
 
 function formatYMDLocal(str) {
   const y = str.substring(0, 4);
@@ -2302,6 +2436,7 @@ function parseDateString(dateStr, full = false) {
 // Fallback logic for when API is unreachable due to CORS or local network issues
 function mockDataOnFailPartial() {
   console.log("Using Mock Data (1 Year)");
+  showNotice('JENNIFERサーバに接続できませんでした。以下はモックデータによる表示です。実データではありません。', 'error');
 
   // Generate 365 days of mock data
   const mockDates = [];
@@ -2363,12 +2498,10 @@ function closeAllDetailLayers() {
     overallLayer.classList.remove('open');
 
     // Remove hexagon highlight when layer is closed
-    if (window.d3) {
-      d3.selectAll('.hexagon-group path.selected-hex')
-        .classed('selected-hex', false)
-        .attr('stroke', 'white')
-        .attr('stroke-width', '0.5');
-    }
+    d3.selectAll('.hexagon-group path.selected-hex')
+      .classed('selected-hex', false)
+      .attr('stroke', 'white')
+      .attr('stroke-width', '0.5');
   }
 
   const dayHourLayer = document.getElementById('dayHourDetailLayer');
@@ -2430,10 +2563,10 @@ window.showOverallListLayer = function (dataPoints, metric, isHitSelected) {
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td>${index + 1}</td>
-      <td>${dateFormatted}</td>
-      <td>${timeFormatted}</td>
-      <td>${hitsFormatted}</td>
-      <td>${metricFormatted}</td>
+      <td>${escapeHtml(dateFormatted)}</td>
+      <td>${escapeHtml(timeFormatted)}</td>
+      <td>${escapeHtml(hitsFormatted)}</td>
+      <td>${escapeHtml(metricFormatted)}</td>
     `;
 
     // 상세 팝업 오픈 로직 제거 (detail_overall.html 삭제됨)

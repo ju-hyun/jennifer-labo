@@ -44,7 +44,7 @@ PTA が **集計済み時系列 (dbmetrics)** を扱うのに対し、本シス�
 ## 2. 技術スタック (PTA 同一)
 
 - **Core**: HTML5, Vanilla JavaScript (ES6+), CSS3
-- **Build**: Vite 4 (開発サーバ / MPA バンドル / API プロキシ)
+- **Build**: Vite 8 (開発サーバ / MPA バンドル / API プロキシ)
 - **Visualization**: Chart.js 4 (npm 依存)
   - パーセンタイル垂直線は Chart.js カスタムプラグインで実装 (annotation プラグイン不使用)
 - **Fonts**: Pretendard JP (CDN)
@@ -295,7 +295,7 @@ jennifer-labo/                      # PTA・PD 統合 Vite マルチページア
 │       ├── panel.js            # 詳細スライドパネル
 │       └── style.css           # スタイルシート
 ├── public/pd/
-│   ├── config.js               # ランタイム設定 (window.PD_CONFIG: BASE_URL, API_DOMAIN, CHUNK_WAIT_MS, MAX_POINTS)
+│   ├── config.js               # ランタイム設定 (window.PD_CONFIG: API_DOMAIN, CHUNK_WAIT_MS, MAX_POINTS, CONFIRM_CHUNKS, 任意で ALLOW_MOCK)
 │   └── vite.svg                # ファビコン
 ├── docs/pd/
 │   ├── help_ja.md / help_ko.md     # ヘルプ原稿
@@ -322,13 +322,13 @@ jennifer-labo/                      # PTA・PD 統合 Vite マルチページア
 
 ### 8.2 開発サーバ
 - ポート **5177** (PTA・PD 共通の単一ポート、`strictPort: true`。旧 PD 専用の 5178 は廃止)
-- `/api` → `https://demo.jennifersoft.co.jp/` にプロキシ (`vite.config.js` の `target`)、`secure: false`
+- `/api` → `https://demo.jennifersoft.co.jp/` にプロキシ (`vite.config.js` の `target`)、`secure: true` (既定。自己署名証明書のサーバで開発する場合のみ `DEV_INSECURE_TLS=1`)。開発サーバは既定で `localhost` のみにバインド (`DEV_HOST` で変更)
 - `proxyReq` フックで `.env` の `DEV_API_TOKEN` を `token` クエリに注入
 - `proxyRes` フックで CORS 関連ヘッダを注入 (PTA と共通の設定)
 
 ### 8.3 本番配布 (nginx)
-[DEPLOY_GUIDE_NGINX.md](./DEPLOY_GUIDE_NGINX.md) 参照。
-- `dist/` 全体 (ランディング + `pta/` + `pd/` + `shared/`) を一括配布し、`location /` 静的配信 + `location /api/` プロキシで `set $args "${args}&token=<token>";`
+[DEPLOY_GUIDE_NGINX.md](../DEPLOY_GUIDE_NGINX.md) (共通ガイド) 参照。
+- `dist/` 全体 (ランディング + `pta/` + `pd/` + `shared/`) を一括配布し、`location /` 静的配信 + 許可リスト方式の `/api/` プロキシでサーバ側からトークンを注入 (`map` + `set $args`)。HTTPS / Basic 認証 / GET 限定 / `transaction/time` のレート制限を併用
 - `/pta/`, `/pd/` は同一 `dist` に含まれ、`/api/` プロキシも共有
 
 ---

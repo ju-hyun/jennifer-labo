@@ -1,135 +1,36 @@
 # Nginx 배포 가이드 (Performance Trend Analysis)
 
-이 문서는 Vite로 빌드된 정적 웹 애플리케이션을 Nginx 환경에 배포하고, API 프록시를 설정하는 절차를 안내합니다.
+> **배포 절차와 Nginx 설정은 공통 문서로 통합되었습니다 → [Nginx 배포 가이드 (공통)](../DEPLOY_GUIDE_NGINX.md)**
+>
+> PTA 와 PD 는 하나의 앱(`dist/`)으로 빌드·배포되고 `/api/` 프록시를 공유하므로, 보안 설정(HTTPS, Basic 인증,
+> API 화이트리스트, 토큰 분리, 백엔드 인증서 검증)이 어긋나지 않도록 설정을 한 곳에서만 관리합니다.
+> 이 문서에는 PTA 고유 내용만 남깁니다.
 
-> 본 프로젝트(jennifer-labo)는 PTA와 PD를 하나의 앱으로 빌드하므로, `dist/` 전체(랜딩 + `pta/` + `pd/` + `shared/`)를 **한 번에** 배포합니다.
-> PTA 접속 경로는 `/pta/` 입니다. PD 관련 내용은 [PD 배포 가이드](../pd/DEPLOY_GUIDE_NGINX.md)를 참고하세요.
+PTA 접속 경로는 `/pta/` 입니다. PD 관련 내용은 [PD 배포 가이드](../pd/DEPLOY_GUIDE_NGINX.md)를 참고하세요.
 
-## 1. 사전 준비 및 환경 설정
+## 런타임 설정 (`config.js`)
 
-이제 `.env` 파일 대신 `public/pta/config.js`를 사용하여 설정을 관리합니다. 이 방식은 빌드 후에도 서버의 `dist/pta/config.js`를 직접 수정해 설정값을 바꿀 수 있게 해줍니다.
-
-### 설정 수정
-`public/pta/config.js` 파일을 열어 필요한 값을 입력합니다.
+`public/pta/config.js` 로 관리하며, 빌드 후에도 서버의 `dist/pta/config.js` 를 직접 수정하면 반영됩니다.
 
 ```javascript
 window.PTA_CONFIG = {
-  BASE_URL: '<your_jennifer_server_ip>',
   API_DOMAIN: '' // Nginx 프록시 사용 시 비워둠
 };
 ```
 
 > **주의**: JENNIFER OpenAPI 인증 토큰은 이 파일(브라우저에 그대로 노출되는 정적 파일)에 넣지 않습니다.
-> 토큰은 아래 3번의 Nginx 설정에서 서버 측으로만 주입합니다.
+> 토큰은 공통 가이드의 Nginx 설정(`labo_secrets.conf`)에서 서버 측으로만 주입합니다.
 
----
+## PTA 가 사용하는 API (프록시 화이트리스트 대상)
 
-## 2. 프로젝트 빌드
+- `/api/domain`, `/api/instance`, `/api/business`
+- `/api/dbmetrics/domain`, `/api/dbmetrics/instance`, `/api/dbmetrics/business`
 
-로컬 환경 또는 CI/CD 환경에서 다음 명령어를 실행하여 배포용 파일을 생성합니다.
+PTA 는 첫 화면에서 월별·지표별로 **약 100건의 API 를 동시에** 요청합니다. 공통 가이드의 레이트 리밋은
+`transaction/time`(PD 전용)에만 적용되므로 PTA 에는 영향이 없습니다. 프록시 앞단에 별도의 전역 레이트 리밋을 추가한다면
+이 동시 요청 수를 고려하세요.
 
-```bash
-# 의존성 설치 (필요시)
-npm install
+## 확인 방법
 
-# 프로젝트 빌드
-npm run build
-```
-
-빌드가 완료되면 프로젝트 루트에 `dist` 폴더가 생성됩니다 (`fix-paths.js` 자동 실행). 이 폴더 내의 모든 파일을 서버로 복사합니다.
-
-```
-dist/
-├── index.html                # 랜딩
-├── pta/  (index.html, help.html, config.js, vite.svg, asserts/)
-├── pd/   (index.html, help.html, config.js, vite.svg, asserts/)
-└── shared/asserts/           # PTA·PD 공용 청크
-```
-
----
-
-## 3. Nginx 설정
-
-서버에 Nginx가 설치되어 있다면, 새로운 설정 파일(예: `/etc/nginx/conf.d/jennifer_labo.conf`)을 생성하고 아래 내용을 작성합니다.
-
-```nginx
-server {
-    listen 80;
-    server_name your-domain.com; # 도메인 또는 서버 IP를 입력하세요.
-
-    # [1] 정적 파일 서비스 설정
-    location / {
-        root /var/www/jennifer-labo; # dist 파일들이 위치한 실제 경로
-        index index.html;
-        try_files $uri $uri/ /index.html;
-    }
-
-    # [2] API 프록시 설정 (CORS 문제 해결 + 토큰 서버 측 주입)
-    # 앱에서 호출하는 /api/... 요청을 실제 API 서버로 전달합니다.
-    # 클라이언트(JS)는 token 파라미터를 전혀 보내지 않으며, 여기서 서버 측 토큰을 붙여줍니다.
-    location /api/ {
-        # 클라이언트가 보낸 쿼리 뒤에 서버 측 토큰을 추가로 붙여 업스트림에 전달
-        set $args "${args}&token=<your_jennifer_api_token>";
-
-        proxy_pass https://<your_jennifer_server_ip>/api/; # 실제 JENNIFER OpenAPI 서버 주소
-        
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-
-        # 백엔드 서버가 자가 서명 인증서를 사용하는 경우 필요할 수 있습니다.
-        proxy_ssl_verify off; 
-        
-        # 타임아웃 설정 (필요시 조정)
-        proxy_connect_timeout 60s;
-        proxy_send_timeout 60s;
-        proxy_read_timeout 60s;
-    }
-
-    # 오류 페이지 설정 (선택 사항)
-    error_page 404 /index.html;
-}
-```
-
-> 토큰 값은 가급적 이 파일에 직접 쓰지 말고, 별도 include 파일(예: `/etc/nginx/conf.d/labo_secrets.conf`, 권한 `600`, root 소유)로
-> 분리해 `include /etc/nginx/conf.d/labo_secrets.conf;`로 불러오는 것을 권장합니다. 이 include 파일은 버전관리에 포함하지 않습니다.
-> 토큰을 교체(rotate)할 때는 이 nginx 설정만 갱신 후 `nginx -t && systemctl reload nginx`를 실행하면 됩니다.
-
-### 로컬 개발 환경 (`npm run dev`)
-
-로컬에서는 Nginx 대신 `vite.config.js`의 dev 서버 프록시가 동일한 역할을 합니다. 프로젝트 루트에 `.env.example`을 복사해 `.env`를 만들고
-`DEV_API_TOKEN`에 로컬 테스트용 토큰을 채워 넣으세요 (`.env`는 git에 커밋되지 않습니다).
-개발 서버는 PTA·PD 공용 포트 **5177** 하나로 동작합니다 (`http://localhost:5177/pta/`).
-
----
-
-## 4. 서버 적용 및 확인
-
-### 파일 복사
-생성된 `dist` 폴더의 모든 내용을 서버의 `/var/www/jennifer-labo` 경로로 복사합니다 (PTA·PD가 함께 배포됩니다).
-```bash
-# 예시: scp 사용 시
-scp -r ./dist/* user@your-server:/var/www/jennifer-labo/
-```
-
-### 설정 반영
-```bash
-# Nginx 설정 문법 확인
-sudo nginx -t
-
-# Nginx 설정 재로드
-sudo systemctl reload nginx
-```
-
-### 브라우저 확인
-설정한 `server_name` 주소(`/pta/`)로 접속하여 페이지가 정상적으로 로드되는지, 차트 데이터가 API로부터 잘 넘어오는지 확인합니다.
-
----
-
-## HTTPS 적용
-보안을 위해 HTTPS를 적용하려면 `certbot`을 사용하는 것이 가장 간단합니다.
-```bash
-sudo apt-get install certbot python3-certbot-nginx
-sudo certbot --nginx -d your-domain.com
-```
+공통 가이드 6번의 `curl` 점검 후, 브라우저에서 `https://your-domain.com/pta/` 에 접속해
+도메인 목록이 표시되고 차트 데이터가 API 로부터 정상적으로 넘어오는지 확인합니다.

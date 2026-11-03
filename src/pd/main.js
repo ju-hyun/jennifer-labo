@@ -16,9 +16,18 @@ import {
 import {
   renderHistogram, renderCdf, renderRanking, PERCENTILE_COLORS, fmt, fmtInt
 } from './chart.js';
-import { openPanel, closePanel, isPanelOpen } from './panel.js';
+import { openPanel, closePanel, isPanelOpen, MAX_ROWS as PANEL_MAX_ROWS } from './panel.js';
 
 const PD_CFG = window.PD_CONFIG || {};
+
+/**
+ * 接続失敗時にダミー(モック)データを表示してよいか。
+ * 運用環境で実データと誤認されないよう、開発ビルドか、config.js の ALLOW_MOCK: true の明示指定時のみ許可する。
+ */
+const MOCK_ALLOWED = !!(import.meta.env?.DEV || PD_CFG.ALLOW_MOCK === true);
+
+/** この回数を超える逐次照会になる場合は、実行前に確認する (データサーバ負荷・待ち時間のため) */
+const CONFIRM_CHUNKS = PD_CFG.CONFIRM_CHUNKS ?? 120;
 
 /* ------------------------------------------------------------------ */
 /* 状態                                                                */
@@ -39,7 +48,9 @@ const state = {
   abortController: null,
   lastRange: null,
   drilldownApp: null,
-  snapshot: null      // 比較モード用の前回照会スナップショット
+  snapshot: null,     // 比較モード用の前回照会スナップショット
+  activePreset: null, // 選択中のプリセット(分)。手入力した時は null
+  targetsSeq: 0       // loadTargets の連続呼び出しで古い応答を捨てるための世代番号
 };
 
 const charts = { histogram: null, cdf: null, ranking: null };
@@ -187,6 +198,14 @@ function renderBreadcrumb() {
   el.breadcrumb.innerHTML = '';
   closePopovers();
 
+  if (state.selectedPath.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'breadcrumb-item loading';
+    empty.textContent = '選択できるドメインがありません';
+    el.breadcrumb.appendChild(empty);
+    return;
+  }
+
   state.selectedPath.forEach((node, level) => {
     if (level > 0) {
       const sep = document.createElement('span');
@@ -266,11 +285,20 @@ async function loadDomains() {
     state.domainTree = buildDomainTree(flat);
   } catch (err) {
     console.error('Failed to load domains:', err);
-    showNotice('ドメイン一覧の取得に失敗しました。モックデータで表示しています。', 'warn');
-    state.domainTree = buildDomainTree([
-      { domainId: 1000, name: 'REALTIME, ANALYSIS', groupHierarchy: ['JENNIFER DEMO', 'MSA'] },
-      { domainId: 1004, name: 'Total', groupHierarchy: ['Total'] }
-    ]);
+    if (MOCK_ALLOWED) {
+      showNotice('ドメイン一覧の取得に失敗しました。モックのドメインで表示しています。', 'warn');
+      state.domainTree = buildDomainTree([
+        { domainId: 1000, name: 'REALTIME, ANALYSIS', groupHierarchy: ['JENNIFER DEMO', 'MSA'] },
+        { domainId: 1004, name: 'Total', groupHierarchy: ['Total'] }
+      ]);
+    } else {
+      const reason =
+        err instanceof ApiError && err.status === 401
+          ? '認証に失敗しました (401)。サーバ側のAPIトークン設定をご確認ください。'
+          : 'ドメイン一覧の取得に失敗しました。ネットワークとAPIプロキシの設定をご確認ください。';
+      showNotice(reason, 'error');
+      state.domainTree = [];
+    }
   }
 
   const first = findFirstDomain(state.domainTree);
@@ -278,14 +306,20 @@ async function loadDomains() {
     state.selectedPath = first.path;
     renderBreadcrumb();
     await loadTargets(getDomainId());
+  } else {
+    // 取得失敗または0件: 「データロード中...」のまま残さず、選択できない旨を表示する
+    renderBreadcrumb();
   }
 }
 
 async function loadTargets(domainId) {
+  const seq = ++state.targetsSeq;
   const [instances, businesses] = await Promise.all([
     fetchInstances(domainId).catch(() => []),
     fetchBusinesses(domainId).catch(() => [])
   ]);
+  // 待機中に別のドメインへ切り替えられていたら、古い結果は反映しない
+  if (seq !== state.targetsSeq) return;
 
   el.instanceSelect.innerHTML = '<option value="">全体インスタンス</option>';
   instances.forEach((inst) => {
@@ -321,10 +355,22 @@ async function runCollection() {
     return;
   }
 
+  // 「直近N分」はボタンを押した時刻で固定されるため、画面を開いたままだと古い区間を照会してしまう。
+  // プリセット選択中は、照会ボタンを押した時点の現在時刻で区間を取り直す。
+  if (state.activePreset) setPreset(state.activePreset);
+
   const range = readRange();
   if (!range) {
     showNotice('開始時刻と終了時刻を正しく指定してください (終了 > 開始)。', 'warn');
     return;
+  }
+
+  const plannedChunks = buildChunks(range.start, range.end).length;
+  if (plannedChunks > CONFIRM_CHUNKS) {
+    const ok = window.confirm(
+      `${plannedChunks} 回の逐次照会になります。JENNIFER データサーバへの負荷が大きく、完了まで時間がかかる可能性があります。\n続行しますか？`
+    );
+    if (!ok) return;
   }
 
   // 直前の照会結果を比較用スナップショットとして退避する (設計書 §6-4)
@@ -373,7 +419,7 @@ async function runCollection() {
       signal: state.abortController.signal,
       onChunk: (rows) => {
         state.store.push(rows);
-        // 10チャンクごと、または1秒ごとに中間描画して進行を可視化する
+        // 1秒ごとに中間描画して進行を可視化する
         const now = performance.now();
         if (now - lastPaint > 1000) {
           lastPaint = now;
@@ -383,13 +429,20 @@ async function runCollection() {
       onProgress: updateProgress
     });
 
-    // 全チャンクが失敗した = サーバに到達できていない。PTA と同様にモックへ退避する。
+    // 全チャンクが失敗した = サーバに到達できていない。
     if (result.chunks > 0 && result.failed === result.chunks) {
-      state.store.push(generateMockTransactions(range.start, range.end));
-      showNotice(
-        'JENNIFERサーバに接続できませんでした。以下はモックデータによる表示です。実データではありません。',
-        'error'
-      );
+      if (MOCK_ALLOWED) {
+        state.store.push(generateMockTransactions(range.start, range.end));
+        showNotice(
+          'JENNIFERサーバに接続できませんでした。以下はモックデータによる表示です。実データではありません。',
+          'error'
+        );
+      } else {
+        showNotice(
+          'JENNIFERサーバに接続できませんでした。ネットワークとAPIプロキシの設定をご確認ください。',
+          'error'
+        );
+      }
       return;
     }
 
@@ -407,10 +460,16 @@ async function runCollection() {
       err instanceof ApiError && err.status === 401
         ? '認証に失敗しました (401)。サーバ側のAPIトークン設定をご確認ください。'
         : `収集中にエラーが発生しました: ${err.message}`;
-    // 画面の挙動を確認できるよう、失敗時もモックで描画する (PTA と同じ方針)
-    state.store = new TxStore();
-    state.store.push(generateMockTransactions(range.start, range.end));
-    showNotice(`${reason} 以下はモックデータによる表示で、実データではありません。`, 'error');
+    if (MOCK_ALLOWED && state.store.length === 0) {
+      // 開発時のみ: 画面の挙動を確認できるようモックで描画する
+      state.store.push(generateMockTransactions(range.start, range.end));
+      showNotice(`${reason} 以下はモックデータによる表示で、実データではありません。`, 'error');
+    } else if (state.store.length > 0) {
+      // 途中まで収集できた実データは破棄せず、そのまま表示する
+      showNotice(`${reason} 取得済みの ${fmtInt(state.store.length)} 件のみを表示しています (不完全なデータです)。`, 'warn');
+    } else {
+      showNotice(reason, 'error');
+    }
   } finally {
     state.collecting = false;
     state.abortController = null;
@@ -429,7 +488,9 @@ function currentFilters() {
   return {
     businessId: state.targetType === 'business' ? state.businessId : '',
     errorMode: el.errorModeSelect.value,
-    appKeyword: state.drilldownApp ?? el.appKeyword.value
+    // ドリルダウン中はアプリ名の完全一致、それ以外は入力キーワードの部分一致
+    appKeyword: state.drilldownApp === null ? el.appKeyword.value : '',
+    appExact: state.drilldownApp === null ? undefined : state.drilldownApp
   };
 }
 
@@ -486,17 +547,17 @@ function renderDeltas() {
   const cur = state.summary;
 
   const pairs = [
-    ['cardCount', cur.count, prev?.count, 0, false],
-    ['cardMean', cur.mean, prev?.mean, 1, true],
-    ['cardP50', cur.percentiles[50], prev?.percentiles[50], 1, true],
-    ['cardP90', cur.percentiles[90], prev?.percentiles[90], 1, true],
-    ['cardP95', cur.percentiles[95], prev?.percentiles[95], 1, true],
-    ['cardP99', cur.percentiles[99], prev?.percentiles[99], 1, true],
-    ['cardMax', cur.max, prev?.max, 1, true],
-    ['cardErrRate', cur.errorRate, prev?.errorRate, 2, true]
+    ['cardCount', cur.count, prev?.count, 0, ' 件'],
+    ['cardMean', cur.mean, prev?.mean, 1, ' ms'],
+    ['cardP50', cur.percentiles[50], prev?.percentiles[50], 1, ' ms'],
+    ['cardP90', cur.percentiles[90], prev?.percentiles[90], 1, ' ms'],
+    ['cardP95', cur.percentiles[95], prev?.percentiles[95], 1, ' ms'],
+    ['cardP99', cur.percentiles[99], prev?.percentiles[99], 1, ' ms'],
+    ['cardMax', cur.max, prev?.max, 1, ' ms'],
+    ['cardErrRate', cur.errorRate, prev?.errorRate, 2, ' pt'] // パーセンテージポイント
   ];
 
-  pairs.forEach(([id, now, before, digits, isMs]) => {
+  pairs.forEach(([id, now, before, digits, unit]) => {
     const node = $(`${id}Delta`);
     if (!node) return;
     if (!active || !Number.isFinite(now) || !Number.isFinite(before)) {
@@ -506,7 +567,7 @@ function renderDeltas() {
     }
     const diff = now - before;
     const sign = diff > 0 ? '+' : '';
-    node.textContent = `${sign}${fmt(diff, digits)}${isMs ? '' : ''} vs ${state.snapshot.label}`;
+    node.textContent = `${sign}${fmt(diff, digits)}${unit} vs ${state.snapshot.label}`;
     node.className = `summary-delta ${diff > 0 ? 'is-up' : diff < 0 ? 'is-down' : 'is-flat'}`;
   });
 }
@@ -566,22 +627,26 @@ function handleBarClick(binIndex) {
   const lo = isOverflow ? h.xMax : h.edges[binIndex];
   const hi = isOverflow ? Infinity : h.edges[binIndex + 1];
 
-  const rows = [];
+  // 区間内の行インデックスだけを集め、応答時間の降順に並べて表示分(上位)だけを行オブジェクトに復元する。
+  // (数十万件の区間でも全件をオブジェクト化しない)
+  const rt = state.store.responseTime;
+  const inBin = [];
   for (let i = 0; i < state.indices.length; i++) {
     const idx = state.indices[i];
-    const rt = state.store.responseTime[idx];
-    if (rt >= lo && (isOverflow ? true : rt < hi)) rows.push(state.store.row(idx));
+    const v = rt[idx];
+    if (v >= lo && (isOverflow ? true : v < hi)) inBin.push(idx);
   }
-  rows.sort((a, b) => b.responseTime - a.responseTime);
+  inBin.sort((a, b) => rt[b] - rt[a]);
+  const rows = inBin.slice(0, PANEL_MAX_ROWS).map((idx) => state.store.row(idx));
 
   const total = state.summary.count || 1;
-  const ratio = (rows.length / total) * 100;
+  const ratio = (inBin.length / total) * 100;
 
   openPanel({
     title: isOverflow ? `${fmtInt(lo)}ms 以上` : `${fmtInt(lo)} 〜 ${fmtInt(hi)} ms`,
-    subtitle: `${fmtInt(rows.length)} 件 (${fmt(ratio)}%)`,
+    subtitle: `${fmtInt(inBin.length)} 件 (${fmt(ratio)}%)`,
     rows,
-    totalCount: rows.length
+    totalCount: inBin.length
   });
 }
 
@@ -623,8 +688,11 @@ function exportCsv() {
     : 'export';
   a.href = url;
   a.download = `percentile_distribution_${stamp}.csv`;
+  document.body.appendChild(a);
   a.click();
-  URL.revokeObjectURL(url);
+  a.remove();
+  // ダウンロード開始前に URL を解放すると失敗するブラウザがあるため、少し遅らせる
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 /* ------------------------------------------------------------------ */
@@ -653,12 +721,14 @@ function bindEvents() {
     if (!btn) return;
     el.presetGroup.querySelectorAll('.preset-btn').forEach((b) => b.classList.remove('is-active'));
     btn.classList.add('is-active');
-    setPreset(Number(btn.dataset.minutes));
+    state.activePreset = Number(btn.dataset.minutes);
+    setPreset(state.activePreset);
   });
 
   [el.startInput, el.endInput].forEach((input) => {
     input.addEventListener('change', () => {
       el.presetGroup.querySelectorAll('.preset-btn').forEach((b) => b.classList.remove('is-active'));
+      state.activePreset = null;
       updateChunkBadge();
     });
   });
@@ -754,11 +824,12 @@ if (import.meta.env?.DEV) {
 }
 
 async function init() {
-  if (!PD_CFG.BASE_URL && !PD_CFG.API_DOMAIN) {
-    console.warn('PD_CONFIG が未設定です。public/pd/config.js を確認してください。');
+  if (!window.PD_CONFIG) {
+    console.warn('PD_CONFIG が未設定です。config.js が読み込まれているか確認してください (public/pd/config.js)。');
   }
 
-  setPreset(15);
+  state.activePreset = 15;
+  setPreset(state.activePreset);
   bindEvents();
   recompute({ quiet: true });
   await loadDomains();
