@@ -17,27 +17,33 @@ JENNIFER5 OpenAPI를 활용한 성능 추이 분석 도구입니다.
 ## 프로젝트 구조
 
 ```
-performance-trend-analysis/
-├── index.html              # 랜딩 페이지 (JENNIFER Extension Labo)
+jennifer-labo/                # PTA·PD 통합 Vite 멀티페이지 앱 (패키지명: jennifer-labo)
+├── index.html                # 랜딩 페이지 (JENNIFER Extension Labo)
 ├── pta/
-│   ├── index.html          # PTA 대시보드 (메인 앱)
-│   └── help.html           # 분석 가이드 (팝업 헬프)
+│   ├── index.html            # PTA 대시보드 (메인 앱)
+│   └── help.html             # 분석 가이드 (팝업 헬프)
+├── pd/                       # PD 페이지 (docs/pd/ 참고)
 ├── src/
-│   ├── main.js             # 핵심 로직 (API, 차트, 히트맵, 인터랙션) — window.PTA_CONFIG를 직접 참조
-│   └── style.css           # 전체 스타일시트
+│   ├── pta/
+│   │   ├── main.js           # 핵심 로직 (API, 차트, 히트맵, 인터랙션) — window.PTA_CONFIG를 직접 참조
+│   │   └── style.css         # 전체 스타일시트
+│   └── pd/                   # PD 소스
 ├── public/pta/
-│   ├── config.js           # 런타임 설정 파일 (BASE_URL, API_DOMAIN — 빌드 후에도 수정 가능)
-│   └── vite.svg            # 파비콘
-├── vite.config.js          # Vite 빌드 및 프록시 설정 (로컬 개발용 API 토큰 서버측 주입 포함)
-├── fix-paths.js            # 빌드 후 경로 보정 스크립트
-├── .env.example            # 로컬 개발용 DEV_API_TOKEN 템플릿 (.env로 복사해서 사용, git 제외)
-├── help_ko.md              # 도움말 원본 (한국어)
-├── help_ja.md              # 도움말 원본 (일본어)
-├── openapi_specification.md # JENNIFER OpenAPI 연동 명세서
-├── system_specification.md # 시스템 상세 사양서
-├── DEPLOY_GUIDE_NGINX.md   # Nginx 배포 가이드
+│   ├── config.js             # 런타임 설정 파일 (BASE_URL, API_DOMAIN — 빌드 후에도 수정 가능)
+│   └── vite.svg              # 파비콘
+├── docs/pta/                 # 본 문서 디렉터리
+│   ├── README.md
+│   ├── help_ko.md / help_ja.md   # 도움말 원본 (한국어 / 일본어)
+│   ├── openapi_specification.md  # JENNIFER OpenAPI 연동 명세서
+│   ├── system_specification.md   # 시스템 상세 사양서
+│   └── DEPLOY_GUIDE_NGINX.md     # Nginx 배포 가이드
+├── vite.config.js            # Vite 빌드 및 프록시 설정 (로컬 개발용 API 토큰 서버측 주입 포함)
+├── fix-paths.js              # 빌드 후 pta/pd HTML의 에셋 경로 보정 스크립트
+├── .env.example              # 로컬 개발용 DEV_API_TOKEN 템플릿 (.env로 복사해서 사용, git 제외)
 └── package.json
 ```
+
+> PTA는 [PD(Percentile Distribution)](../pd/README.md)와 하나의 앱으로 통합되어 있으며, 루트 [README](../../README.md)가 전체 구조의 기준입니다.
 
 ---
 
@@ -61,7 +67,7 @@ window.PTA_CONFIG = {
 
 | 변수명 | 설명 |
 |---|---|
-| `BASE_URL` | Vite 개발 서버의 API 프록시 대상 주소 |
+| `BASE_URL` | API 프록시 대상 주소 |
 | `API_DOMAIN` | 프록시 없이 API 서버에 직접 요청할 때 사용 (Nginx 배포 시 비워둠) |
 
 > [!NOTE]
@@ -81,8 +87,11 @@ cp .env.example .env
 ```bash
 npm run dev
 ```
+개발 서버는 **포트 5177 하나**로 PTA·PD를 모두 제공하며, `/api` 요청은 `https://demo.jennifersoft.co.jp/` 로 프록시됩니다 (`vite.config.js`).
+
 - 랜딩 페이지: `http://localhost:5177/`
 - PTA 대시보드: `http://localhost:5177/pta/`
+- PD 대시보드: `http://localhost:5177/pd/`
 
 ---
 
@@ -107,11 +116,20 @@ npm run dev
 ```bash
 npm run build
 ```
-빌드 결과물은 `dist/` 폴더에 생성됩니다. `fix-paths.js`가 자동 실행되어 `pta/` 하위 HTML의 에셋 경로를 보정합니다.
+빌드 결과물은 `dist/` 폴더에 PTA·PD가 함께 생성됩니다 (PTA 관련: `dist/pta/`, 공용 청크: `dist/shared/asserts/`).
+`fix-paths.js`가 자동 실행되어 `pta/`, `pd/` 하위 HTML의 에셋 경로를 보정합니다.
+
+```
+dist/
+├── index.html                # 랜딩
+├── pta/  (index.html, help.html, config.js, vite.svg, asserts/)
+├── pd/   (index.html, help.html, config.js, vite.svg, asserts/)
+└── shared/asserts/           # PTA·PD 공용 청크 (chart.js 등)
+```
 
 > [!IMPORTANT]
 > `BASE_URL`/`API_DOMAIN` 설정은 `public/pta/config.js`에서 관리하며, 빌드 후에도 `dist/pta/config.js`를 수정하여 즉시 반영할 수 있습니다.
 > API 토큰은 이 파일이 아닌 **nginx 설정**에서 관리합니다 (아래 참고).
 
 ### Nginx 배포
-Nginx 환경에서의 상세한 배포 절차(API 프록시 및 토큰 서버측 주입, HTTPS 적용 등)는 [DEPLOY_GUIDE_NGINX.md](./DEPLOY_GUIDE_NGINX.md)를 참고하세요.
+`dist/` 전체를 한 번에 배포합니다. Nginx 환경에서의 상세한 배포 절차(API 프록시 및 토큰 서버측 주입, HTTPS 적용 등)는 [DEPLOY_GUIDE_NGINX.md](./DEPLOY_GUIDE_NGINX.md)를 참고하세요.

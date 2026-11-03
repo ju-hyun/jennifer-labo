@@ -3,7 +3,7 @@
 JENNIFER5 が収集した **X-View トランザクション点データ**を OpenAPI 経由で取得し、
 応答時間の分布ヒストグラムとパーセンタイル指標を可視化するダッシュボードの設計書です。
 
-既存の [performance-trend-analysis (PTA)](../performance-trend-analysis/) と**同一のアーキテクチャ・配布形態**に従います。
+[PTA](../pta/system_specification.md) と**同一の Vite マルチページアプリ (jennifer-labo) に統合**され、同じビルド・配布フローで提供されます。
 
 - **API 仕様の根拠**: `JENNIFER5マニュアル.pdf` 付録 5.9 (OpenAPI) — 5.9.1.1〜5.9.1.3, **5.9.4.5**
 - **UI 言語**: 日本語 (PTA と同一)
@@ -279,53 +279,57 @@ X 軸 = パーセンタイル (0〜100、90 以上を拡大する補助軸)、Y 
 ## 7. プロジェクト構成
 
 ```
-percentile-distribution/
+jennifer-labo/                      # PTA・PD 統合 Vite マルチページアプリ
 ├── index.html                  # ランディング (JENNIFER Extension Labo)
+├── pta/                        # PTA ページ
 ├── pd/
 │   ├── index.html              # PD ダッシュボード (メインアプリ)
 │   └── help.html               # 分析ガイド (ポップアップヘルプ)
 ├── src/
-│   ├── main.js                 # エントリ / 状態管理 / イベント束ね
-│   ├── api.js                  # OpenAPI 呼び出し・1分チャンク逐次収集
-│   ├── stats.js                # パーセンタイル・ヒストグラムビン・要約統計
-│   ├── chart.js                # Chart.js 構成 + パーセンタイル オーバーレイ
-│   ├── panel.js                # 詳細スライドパネル
-│   └── style.css               # スタイルシート
+│   ├── pta/                    # PTA ソース (main.js, style.css)
+│   └── pd/
+│       ├── main.js             # エントリ / 状態管理 / イベント束ね
+│       ├── api.js              # OpenAPI 呼び出し・1分チャンク逐次収集
+│       ├── stats.js            # パーセンタイル・ヒストグラムビン・要約統計
+│       ├── chart.js            # Chart.js 構成 + パーセンタイル オーバーレイ
+│       ├── panel.js            # 詳細スライドパネル
+│       └── style.css           # スタイルシート
 ├── public/pd/
-│   ├── config.js               # ランタイム設定 (BASE_URL, API_DOMAIN)
+│   ├── config.js               # ランタイム設定 (window.PD_CONFIG: BASE_URL, API_DOMAIN, CHUNK_WAIT_MS, MAX_POINTS)
 │   └── vite.svg                # ファビコン
+├── docs/pd/
+│   ├── help_ja.md / help_ko.md     # ヘルプ原稿
+│   ├── openapi_specification.md    # OpenAPI 連携仕様書
+│   ├── design_specification.md     # 本書
+│   └── DEPLOY_GUIDE_NGINX.md       # Nginx 配布ガイド
 ├── vite.config.js              # ビルド・dev プロキシ (トークンをサーバ側で注入)
-├── fix-paths.js                # ビルド後のパス補正
+├── fix-paths.js                # ビルド後のパス補正 (pta/pd)
 ├── .env.example                # DEV_API_TOKEN テンプレート
-├── help_ja.md / help_ko.md     # ヘルプ原稿
-├── openapi_specification.md    # OpenAPI 連携仕様書
-├── design_specification.md     # 本書
-├── DEPLOY_GUIDE_NGINX.md       # Nginx 配布ガイド
 └── package.json
 ```
 
-> PTA は `src/main.js` 単一ファイル 2,445 行構成です。本システムは当初から
+> PTA は `src/pta/main.js` 単一ファイル 2,445 行構成です。本システムは当初から
 > **役割別モジュール**に分割し保守性を確保します (Vite がバンドルするため配布形態は同一)。
 
 ---
 
 ## 8. ビルドと配布
 
-### 8.1 Vite MPA (PTA 同型)
-- `rollupOptions.input`: `main(index.html)`, `pd(pd/index.html)`, `help(pd/help.html)`
-- アセット出力: `pd/asserts/` (PTA の `pta/asserts/` と同じ命名慣習)
-- ビルド後 `fix-paths.js` が `../pd/asserts/` → `./asserts/` に補正
+### 8.1 Vite MPA (PTA と統合)
+- `rollupOptions.input` は PTA と共通の 5 エントリ: `main(index.html)`, `pta(pta/index.html)`, `pta-help(pta/help.html)`, `pd(pd/index.html)`, `pd-help(pd/help.html)`
+- アセット出力: PD は `dist/pd/asserts/`、PTA は `dist/pta/asserts/`、両アプリ共有チャンク (chart.js 等) は `dist/shared/asserts/`
+- ビルド後 `fix-paths.js` が `dist/pd/*.html` (および `dist/pta/*.html`) の `../pd/asserts/` → `./asserts/` に補正
 
 ### 8.2 開発サーバ
-- ポート **5178** (PTA の 5177 と競合回避、`strictPort: true`)
-- `/api` → `BASE_URL` にプロキシ、`secure: false`
+- ポート **5177** (PTA・PD 共通の単一ポート、`strictPort: true`。旧 PD 専用の 5178 は廃止)
+- `/api` → `https://demo.jennifersoft.co.jp/` にプロキシ (`vite.config.js` の `target`)、`secure: false`
 - `proxyReq` フックで `.env` の `DEV_API_TOKEN` を `token` クエリに注入
-- `proxyRes` フックで CORS 関連ヘッダを注入 (PTA と同一コード)
+- `proxyRes` フックで CORS 関連ヘッダを注入 (PTA と共通の設定)
 
 ### 8.3 本番配布 (nginx)
-PTA の `DEPLOY_GUIDE_NGINX.md` に準拠。
-- `location /pd/` 静的配信 + `location /api/` プロキシで `set $args "${args}&token=<token>";`
-- PTA と**同一 nginx に並置可能** (`/pta/`, `/pd/` 併存、`/api/` プロキシ共有)
+[DEPLOY_GUIDE_NGINX.md](./DEPLOY_GUIDE_NGINX.md) 参照。
+- `dist/` 全体 (ランディング + `pta/` + `pd/` + `shared/`) を一括配布し、`location /` 静的配信 + `location /api/` プロキシで `set $args "${args}&token=<token>";`
+- `/pta/`, `/pd/` は同一 `dist` に含まれ、`/api/` プロキシも共有
 
 ---
 

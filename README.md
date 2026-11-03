@@ -146,5 +146,3 @@ HTTPS 설정 등 상세 절차는 각 도구의 배포 가이드를 참고하세
 | PTA | [README](./docs/pta/README.md) · [시스템 사양서](./docs/pta/system_specification.md) · [OpenAPI 명세](./docs/pta/openapi_specification.md) · 도움말 [ko](./docs/pta/help_ko.md) / [ja](./docs/pta/help_ja.md) |
 | PD | [README](./docs/pd/README.md) · [설계서](./docs/pd/design_specification.md) · [OpenAPI 명세](./docs/pd/openapi_specification.md) · 도움말 [ko](./docs/pd/help_ko.md) / [ja](./docs/pd/help_ja.md) |
 
-> `docs/` 하위 문서는 통합 이전(두 개의 독립 프로젝트) 기준으로 작성되어, 일부 경로·포트 설명이
-> 현재 구조와 다를 수 있습니다. 현재 구조는 이 README를 기준으로 합니다.

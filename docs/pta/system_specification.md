@@ -62,7 +62,7 @@
 ### 3.2 런타임 설정 (Runtime Configuration)
 - **설정 파일**: `public/pta/config.js` (`window.PTA_CONFIG` 전역 객체, `BASE_URL`/`API_DOMAIN`만 포함)
 - **빌드 독립적**: 빌드 후에도 `dist/pta/config.js`를 직접 수정하여 API 서버 주소 변경 가능.
-- **참조 경로**: `src/main.js`가 `window.PTA_CONFIG`를 직접 읽어 `PTA_CFG.BASE_URL`, `PTA_CFG.API_DOMAIN`으로 사용 (별도 설정 모듈 파일 없음).
+- **참조 경로**: `src/pta/main.js`가 `window.PTA_CONFIG`를 직접 읽어 `PTA_CFG.BASE_URL`, `PTA_CFG.API_DOMAIN`으로 사용 (별도 설정 모듈 파일 없음).
 - **API 인증 토큰**: 클라이언트에는 존재하지 않음. `/api/` 요청이 업스트림으로 전달되는 시점에 리버스 프록시(운영: nginx, 로컬: Vite dev 서버)가 서버 측에서 주입 (§5.2 참고).
 
 ### 3.3 주요 메트릭 (Metrics)
@@ -124,12 +124,13 @@
 ## 5. 빌드 및 배포 아키텍처
 
 ### 5.1 Vite MPA 빌드 설정
-- `vite.config.js`의 `rollupOptions.input`에 3개의 entry point 등록: `main(index.html)`, `pta(pta/index.html)`, `help(pta/help.html)`.
-- 에셋 출력 경로: `pta/asserts/` 하위에 JS/CSS 번들 생성.
-- 빌드 후 `fix-paths.js`가 자동 실행되어 `dist/pta/index.html`, `dist/pta/help.html` 내의 `../pta/asserts/` 경로를 `./asserts/`로 보정.
+- PTA·PD 통합 멀티페이지 앱이며, `vite.config.js`의 `rollupOptions.input`에 5개의 entry point 등록: `main(index.html)`, `pta(pta/index.html)`, `pta-help(pta/help.html)`, `pd(pd/index.html)`, `pd-help(pd/help.html)`.
+- 에셋 출력 경로: PTA 엔트리·에셋은 `dist/pta/asserts/`, PD는 `dist/pd/asserts/`, 두 앱이 공유하는 청크(chart.js 등)는 `dist/shared/asserts/`에 생성.
+- 빌드 후 `fix-paths.js`가 자동 실행되어 `dist/pta/`, `dist/pd/` 하위 `index.html`·`help.html` 내의 `../<app>/asserts/` 경로를 `./asserts/`로 보정 (PTA의 경우 `../pta/asserts/` → `./asserts/`).
+- 빌드 결과(`dist/`)는 하나의 배포 단위이며 PTA·PD를 한 번에 배포한다.
 
 ### 5.2 개발 서버 프록시
-- Vite 개발 서버(포트 `5177`)에서 `/api` 경로 요청을 `BASE_URL`로 프록시.
+- Vite 개발 서버(포트 `5177`, PTA·PD 공용 단일 포트, `strictPort: true`)에서 `/api` 경로 요청을 `https://demo.jennifersoft.co.jp/`로 프록시 (`vite.config.js`의 `target`).
 - `secure: false` 설정으로 자가서명 인증서 환경 지원.
 - `configure` 훅에서 `proxy.on('proxyReq', ...)`을 통해, 업스트림으로 요청이 전달되기 직전에 `.env`의 `DEV_API_TOKEN` 값을 `token` 쿼리파라미터로 주입 (클라이언트 코드는 토큰을 모름).
 - 같은 훅에서 `proxy.on('proxyRes', ...)`으로 CORS 관련 헤더(`Cross-Origin-Resource-Policy` 등) 주입.
