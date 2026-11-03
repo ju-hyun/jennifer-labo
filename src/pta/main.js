@@ -106,8 +106,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   // If a configuration/auth error was already shown by loadDomains, stop here
   if (document.querySelector('.config-error-overlay')) return;
 
-  // Even if domains failed to load (CORS/Network error), try to load data (which will trigger mock data fallback)
-  loadData();
+  // 初回のデータ読み込みは loadDomains() 内の updateSelectedPath() -> loadInstances().then(loadData)
+  // で行われる (ドメイン取得失敗時のモックドメインも同経路)。ここで loadData() を重ねて呼ぶと
+  // 約 100 件の API リクエストが二重に発行されるため呼ばない。
 
   // Target Type Toggle
   typeRadios.forEach(radio => {
@@ -226,6 +227,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 
 function showConfigError(message, title = 'Configuration Error') {
+  // 同時多発するリクエストが全て 401 になっても、オーバーレイは 1 つだけ表示する
+  if (document.querySelector('.config-error-overlay') || showConfigError.pending) return;
+  showConfigError.pending = true;
+
   const overlay = document.createElement('div');
   overlay.className = 'config-error-overlay';
   overlay.innerHTML = `
@@ -643,7 +648,12 @@ async function fetchBusinesses(domainId) {
   }
 }
 
+// 連続呼び出し時、最後に開始した読み込みのみが画面を更新するための世代番号
+let loadDataSeq = 0;
+
 async function loadData() {
+  const seq = ++loadDataSeq;
+  const isStale = () => seq !== loadDataSeq;
   const loadingOverlay = document.getElementById('loadingOverlay');
   if (loadingOverlay) loadingOverlay.classList.remove('hidden');
 
@@ -706,6 +716,9 @@ async function loadData() {
       results[m] = await Promise.all(fetchPromisesMap[m]);
     }
 
+    // 待っている間に別の読み込みが始まっていたら、古い結果は破棄する
+    if (isStale()) return;
+
     // 병합 및 시간순 정렬 및 중복 제거
     const processResults = (resArray) => {
       let metricData = [];
@@ -730,12 +743,13 @@ async function loadData() {
     // Calculate Error Rate (err_rate)
     const countData = yearlyData['service_count'] || [];
     const errCountData = yearlyData['service_err_count'] || [];
-    yearlyData['err_rate'] = countData.map((item, idx) => {
-      const errItem = errCountData[idx];
+    // 配列インデックスではなく time をキーに突き合わせる (月単位の取得失敗で系列がずれるため)。
+    // リクエスト 0 件の日は 0% ではなく null (欠測) とし、平均に 0 として混ざらないようにする。
+    const errCountByTime = new Map(errCountData.map(e => [e.time, e.value]));
+    yearlyData['err_rate'] = countData.map((item) => {
       const count = item.value || 0;
-      const errCount = (errItem && errItem.value) ? errItem.value : 0;
-      const rate = count > 0 ? (errCount / count) * 100 : 0;
-      return { time: item.time, value: rate };
+      const errCount = errCountByTime.get(item.time) || 0;
+      return { time: item.time, value: count > 0 ? (errCount / count) * 100 : null };
     });
 
     // Update UI Elements for Chart
@@ -757,7 +771,7 @@ async function loadData() {
     console.error('Data loading failed:', error);
     mockDataOnFailPartial();
   } finally {
-    if (loadingOverlay) loadingOverlay.classList.add('hidden');
+    if (loadingOverlay && !isStale()) loadingOverlay.classList.add('hidden');
   }
 }
 
@@ -1277,7 +1291,9 @@ function calculateMonthlyAverages(data, label) {
   // Group data by month, but ONLY up to today for the current month/future
   data.forEach(item => {
     if (item.time > todayStr) return; // Future data (zeros) should not be averaged
-    if (item.value === 0 || item.value === null || item.value === undefined) return; // Exclude 0 or missing values
+    // Exclude 0 or missing values (エラー率のみ 0% が正常値なので 0 を残す)
+    if (item.value === null || item.value === undefined) return;
+    if (item.value === 0 && currentMetric !== 'err_rate') return;
 
     const lbl = parseDateString(item.time);
     const month = lbl.split('/')[0];
@@ -1602,9 +1618,13 @@ async function reloadHeatmaps(domainId, targetId, targetType, startDate, endDate
       heatmapErrCountData.sort((a, b) => String(a.time).localeCompare(String(b.time)));
     }
 
-    const combinedHeatmapData = heatmapTimeData.map((timeItem, idx) => {
-      const countItem = heatmapCountData[idx];
-      const errCountItem = (currentMetric === 'err_rate') ? heatmapErrCountData[idx] : null;
+    // 配列インデックスではなく time をキーに突き合わせる (チャンク取得失敗・欠測でずれるため)
+    const countByTime = new Map(heatmapCountData.map(c => [c.time, c]));
+    const errCountByTime = new Map(heatmapErrCountData.map(e => [e.time, e]));
+
+    const combinedHeatmapData = heatmapTimeData.map((timeItem) => {
+      const countItem = countByTime.get(timeItem.time);
+      const errCountItem = (currentMetric === 'err_rate') ? errCountByTime.get(timeItem.time) : null;
 
       let value = timeItem.value;
       if (currentMetric === 'service_count') {
@@ -1662,10 +1682,12 @@ function renderDayHourHeatmap(data, isHitSelected, metric) {
     const date = new Date(year, month, day);
     const dayIdx = date.getDay();
 
-    // Map each item in order to hour 0, 1, 2, ...
-    // API returns 24 items per day in chronological order
+    // 時刻は time 文字列 (yyyyMMddHH...) の HH から求める。
+    // 欠測の時間帯や当日の部分データがあっても、セルが隣へずれないようにするため。
+    // HH が取れない形式の場合のみ、従来どおり日内の順序で代用する。
     items.forEach((item, posInDay) => {
-      const hour = posInDay % 24;
+      const hh = parseInt(String(item.time).substring(8, 10), 10);
+      const hour = Number.isInteger(hh) && hh >= 0 && hh < 24 ? hh : posInDay % 24;
       if (item.count > 0) {
         dayHourMap[dayIdx][hour].sum += item.value;
         dayHourMap[dayIdx][hour].count++;
@@ -2103,10 +2125,12 @@ function updateSummaryCardsPartial(startIdx, endIdx) {
     String(today.getMonth() + 1).padStart(2, '0') +
     String(today.getDate()).padStart(2, '0');
 
-  const calcAvg = data => {
+  // 0 は「データなし」として除外するが、エラー率の 0% は正常値なので除外しない
+  // (除外すると平均エラー率が過大になる)。リクエスト 0 件の日は null なので別途除外される。
+  const calcAvg = (data, keepZero = false) => {
     const validData = data.filter(d =>
       d.time <= todayStr &&
-      d.value !== 0 && d.value !== null && d.value !== undefined
+      (keepZero || d.value !== 0) && d.value !== null && d.value !== undefined
     );
     return validData.length ? validData.reduce((s, d) => s + d.value, 0) / validData.length : 0;
   };
@@ -2149,7 +2173,7 @@ function updateSummaryCardsPartial(startIdx, endIdx) {
   const avgSysCpu = calcAvg(sysCpuData);
   const avgMaxSysCpu = calcAvg(maxSysCpuData);
   const avgHeapUsage = calcAvg(heapUsageData);
-  const avgErrRate = calcAvg(errRateData);
+  const avgErrRate = calcAvg(errRateData, true);
 
   document.getElementById('avgResponseTime').innerHTML = `${Math.round(avgST).toLocaleString()} <span class="unit">ms</span>`;
   document.getElementById('avgTps').textContent = avgSR.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });

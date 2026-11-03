@@ -429,7 +429,9 @@ function currentFilters() {
   return {
     businessId: state.targetType === 'business' ? state.businessId : '',
     errorMode: el.errorModeSelect.value,
-    appKeyword: state.drilldownApp ?? el.appKeyword.value
+    // ドリルダウン中はアプリ名の完全一致、それ以外は入力キーワードの部分一致
+    appKeyword: state.drilldownApp === null ? el.appKeyword.value : '',
+    appExact: state.drilldownApp === null ? undefined : state.drilldownApp
   };
 }
 

@@ -219,7 +219,13 @@ export async function collectTransactions({
           console.warn(`Chunk ${i + 1}/${chunks.length} failed after retries:`, err);
           summary.failed++;
         } else {
-          await sleep(300 * Math.pow(3, attempt), signal);
+          try {
+            await sleep(300 * Math.pow(3, attempt), signal);
+          } catch {
+            // 백오프 대기 중의 중단은 예외로 흘리지 않고 중단 상태로 보고한다
+            summary.aborted = true;
+            return summary;
+          }
         }
       }
     }

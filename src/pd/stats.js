@@ -153,7 +153,7 @@ export class TxStore {
  * @returns {Int32Array} 条件を満たす行インデックス
  */
 export function filterIndices(store, filters = {}) {
-  const { businessId, errorMode = 'all', appKeyword = '', rtMin, rtMax } = filters;
+  const { businessId, errorMode = 'all', appKeyword = '', appExact, rtMin, rtMax } = filters;
   const keyword = appKeyword.trim().toLowerCase();
 
   // ビジネス絞り込み: 該当する bizKey インデックスを事前に判定しておく
@@ -167,8 +167,14 @@ export function filterIndices(store, filters = {}) {
   }
 
   // アプリ名絞り込みも同様に、インターンテーブル側で1回だけ判定する
+  // appExact (ランキングのドリルダウン) は完全一致。部分一致の appKeyword より優先する。
   let appAllowed = null;
-  if (keyword) {
+  if (appExact !== undefined && appExact !== null) {
+    appAllowed = new Uint8Array(store.apps.values.length);
+    store.apps.values.forEach((name, idx) => {
+      appAllowed[idx] = name === appExact ? 1 : 0;
+    });
+  } else if (keyword) {
     appAllowed = new Uint8Array(store.apps.values.length);
     store.apps.values.forEach((name, idx) => {
       appAllowed[idx] = name.toLowerCase().includes(keyword) ? 1 : 0;
@@ -294,6 +300,9 @@ const MAX_AUTO_BINS = 240;
 /** 自動モードでのビン数下限。応答が速い環境で棒 1 本になるのを避ける。 */
 const MIN_AUTO_BINS = 4;
 
+/** 手動モードでのビン数上限。誤入力 (幅1ms × 上限数千万ms 等) による UI フリーズを防ぐ。 */
+const MAX_MANUAL_BINS = 1000;
+
 /**
  * ヒストグラムのビンを構築する (§3.6)。
  *
@@ -318,6 +327,10 @@ export function buildHistogram(sorted, opts = {}) {
   if (mode === 'manual' && opts.xMax > 0 && opts.binWidth > 0) {
     xMax = opts.xMax;
     binWidth = opts.binWidth;
+    // ビン数が上限を超える場合は、幅を元の幅の整数倍に広げて上限内に収める
+    if (xMax / binWidth > MAX_MANUAL_BINS) {
+      binWidth *= Math.ceil(xMax / binWidth / MAX_MANUAL_BINS);
+    }
   } else {
     // ビン幅は 50ms 固定。X 軸の目盛りが常に 0/50/100... と読めるようにするため、
     // 幅をデータに合わせて動かさない (niceNumber による可変幅は使わない)。
