@@ -6,6 +6,16 @@ import { scaleLinear, scaleSequential } from 'd3-scale';
 import { max, min } from 'd3-array';
 import { hexbin } from 'd3-hexbin';
 
+import {
+  formatDateParam, toYMD, getMetricUnit, escapeHtml, formatYMDLocal, parseDateString
+} from './lib/format.js';
+import {
+  mergeSeries, flattenSorted, computeErrRate, calculateSMA, computeMonthlyAverages, summarizeRange
+} from './lib/series.js';
+import {
+  combineHeatmapData, buildDayHourMap, dayHourAverages, computeIqrThresholds, computeOverallStats
+} from './lib/heatmap-data.js';
+
 // 既存コードの `d3.xxx` 呼び出しをそのまま使うための名前空間
 const d3 = { select, selectAll, scaleLinear, scaleSequential, max, min, hexbin };
 
@@ -785,37 +795,12 @@ async function loadData() {
     }
 
     // 병합 및 시간순 정렬 및 중복 제거
-    const processResults = (resArray) => {
-      let metricData = [];
-      resArray.forEach(res => { metricData.push(...res); });
-      metricData.sort((a, b) => String(a.time).localeCompare(String(b.time)));
-
-      const uniqueData = [];
-      const timeSet = new Set();
-      metricData.forEach(item => {
-        if (!timeSet.has(item.time)) {
-          timeSet.add(item.time);
-          uniqueData.push(item);
-        }
-      });
-      return uniqueData;
-    };
-
     metricsToFetch.forEach(m => {
-      yearlyData[m] = processResults(results[m]);
+      yearlyData[m] = mergeSeries(results[m]);
     });
 
     // Calculate Error Rate (err_rate)
-    const countData = yearlyData['service_count'] || [];
-    const errCountData = yearlyData['service_err_count'] || [];
-    // 配列インデックスではなく time をキーに突き合わせる (月単位の取得失敗で系列がずれるため)。
-    // リクエスト 0 件の日は 0% ではなく null (欠測) とし、平均に 0 として混ざらないようにする。
-    const errCountByTime = new Map(errCountData.map(e => [e.time, e.value]));
-    yearlyData['err_rate'] = countData.map((item) => {
-      const count = item.value || 0;
-      const errCount = errCountByTime.get(item.time) || 0;
-      return { time: item.time, value: count > 0 ? (errCount / count) * 100 : null };
-    });
+    yearlyData['err_rate'] = computeErrRate(yearlyData['service_count'] || [], yearlyData['service_err_count'] || []);
 
     // Update UI Elements for Chart
     const activeBtn = document.querySelector(`.metric-btn[data-metric="${currentMetric}"]`);
@@ -1124,23 +1109,6 @@ const selectionRangePlugin = {
 };
 
 // Draw or Update Chart
-// Helper to calculate Simple Moving Average
-function calculateSMA(data, period) {
-  const result = [];
-  for (let i = 0; i < data.length; i++) {
-    if (i < period - 1) {
-      result.push(null);
-    } else {
-      let sum = 0;
-      for (let j = 0; j < period; j++) {
-        sum += data[i - j] || 0;
-      }
-      result.push(sum / period);
-    }
-  }
-  return result;
-}
-
 function updateChart(canvasId, label, data, color, chartInstance, setInstanceCallback) {
   const ctx = document.getElementById(canvasId).getContext('2d');
 
@@ -1349,94 +1317,8 @@ let currentMetricLabelCache = '';
 
 function calculateMonthlyAverages(data, label) {
   currentMetricLabelCache = label;
-  monthlyAveragesCache = {};
   monthlyAveragesVersion++;
-
-  const monthData = {};
-  const today = new Date();
-  const todayStr = today.getFullYear() +
-    String(today.getMonth() + 1).padStart(2, '0') +
-    String(today.getDate()).padStart(2, '0');
-
-  // Group data by month, but ONLY up to today for the current month/future
-  data.forEach(item => {
-    if (item.time > todayStr) return; // Future data (zeros) should not be averaged
-    // Exclude 0 or missing values (エラー率のみ 0% が正常値なので 0 を残す)
-    if (item.value === null || item.value === undefined) return;
-    if (item.value === 0 && currentMetric !== 'err_rate') return;
-
-    const lbl = parseDateString(item.time);
-    const month = lbl.split('/')[0];
-    if (!monthData[month]) monthData[month] = [];
-    monthData[month].push(item.value);
-  });
-
-  // Since data is chronologically sorted, identify the order of months
-  const monthsInOrder = [];
-  let lastM = null;
-  data.forEach(item => {
-    const lbl = parseDateString(item.time);
-    if (typeof lbl !== 'string') return;
-
-    const m = lbl.split('/')[0];
-    if (m !== lastM) {
-      monthsInOrder.push(m);
-      lastM = m;
-    }
-  });
-
-  // Calculate avg per month and set up prev month references
-  monthsInOrder.forEach((m, idx) => {
-    if (!monthData[m] || monthData[m].length === 0) {
-      // If no valid data for this month, skip or set zero
-      monthlyAveragesCache[m] = { avg: 0, prevAvgMonth: idx > 0 ? monthsInOrder[idx - 1] : null };
-      return;
-    }
-
-    const arr = monthData[m];
-    const avg = arr.reduce((acc, v) => acc + v, 0) / arr.length;
-
-    monthlyAveragesCache[m] = {
-      avg: avg,
-      prevAvgMonth: idx > 0 ? monthsInOrder[idx - 1] : null
-    };
-  });
-
-  // Compute MoM rates
-  monthsInOrder.forEach((m, idx) => {
-    const d = monthlyAveragesCache[m];
-    if (!d) return;
-
-    if (d.prevAvgMonth && monthlyAveragesCache[d.prevAvgMonth]) {
-      let prevAvg;
-      const isLastMonth = (idx === monthsInOrder.length - 1);
-
-      if (isLastMonth) {
-        // Like-for-like comparison: 
-        // Compare current month's count of valid days with the same count from the start of the previous month.
-        const currentMonthData = monthData[m] || [];
-        const currentMonthCount = currentMonthData.length;
-        const prevMonthData = monthData[d.prevAvgMonth] || [];
-
-        if (currentMonthCount > 0 && prevMonthData.length > 0) {
-          const prevMonthSlice = prevMonthData.slice(0, currentMonthCount);
-          prevAvg = prevMonthSlice.reduce((acc, v) => acc + v, 0) / (prevMonthSlice.length || 1);
-        } else {
-          prevAvg = monthlyAveragesCache[d.prevAvgMonth].avg;
-        }
-      } else {
-        prevAvg = monthlyAveragesCache[d.prevAvgMonth].avg;
-      }
-
-      if (prevAvg > 0) {
-        d.rate = ((d.avg - prevAvg) / prevAvg) * 100;
-      } else {
-        d.rate = 0;
-      }
-    } else {
-      d.rate = null;
-    }
-  });
+  monthlyAveragesCache = computeMonthlyAverages(data, { metric: currentMetric, todayStr: toYMD(new Date()) });
 }
 
 // 統計グリッドの再描画をスキップするための署名と、月別平均の更新世代
@@ -1694,44 +1576,12 @@ async function reloadHeatmaps(domainId, targetId, targetType, startDate, endDate
     const errCountResults = (currentMetric === 'err_rate') ? await Promise.all(errCountPromises) : [];
     if (seq !== heatmapSeq) return;
 
-    let heatmapTimeData = [];
-    timeResults.forEach(res => heatmapTimeData.push(...res));
-    heatmapTimeData.sort((a, b) => String(a.time).localeCompare(String(b.time)));
-
-    let heatmapCountData = [];
-    countResults.forEach(res => heatmapCountData.push(...res));
-    heatmapCountData.sort((a, b) => String(a.time).localeCompare(String(b.time)));
-
-    let heatmapErrCountData = [];
-    if (currentMetric === 'err_rate') {
-      errCountResults.forEach(res => heatmapErrCountData.push(...res));
-      heatmapErrCountData.sort((a, b) => String(a.time).localeCompare(String(b.time)));
-    }
-
-    // 配列インデックスではなく time をキーに突き合わせる (チャンク取得失敗・欠測でずれるため)
-    const countByTime = new Map(heatmapCountData.map(c => [c.time, c]));
-    const errCountByTime = new Map(heatmapErrCountData.map(e => [e.time, e]));
-
-    const combinedHeatmapData = heatmapTimeData.map((timeItem) => {
-      const countItem = countByTime.get(timeItem.time);
-      const errCountItem = (currentMetric === 'err_rate') ? errCountByTime.get(timeItem.time) : null;
-
-      let value = timeItem.value;
-      if (currentMetric === 'service_count') {
-        value = countItem ? countItem.value : 0;
-      } else if (currentMetric === 'err_rate') {
-        const c = countItem ? countItem.value : 0;
-        const e = errCountItem ? errCountItem.value : 0;
-        value = c > 0 ? (e / c) * 100 : 0;
-      }
-
-      return {
-        time: timeItem.time,
-        value: value,
-        yValue: (currentMetric === 'service_count') ? timeItem.value : value, // Use Response Time for Y-axis or list metrics when Hit Count is selected
-        count: countItem ? countItem.value : 0
-      };
-    });
+    const combinedHeatmapData = combineHeatmapData(
+      flattenSorted(timeResults),
+      flattenSorted(countResults),
+      currentMetric === 'err_rate' ? flattenSorted(errCountResults) : [],
+      currentMetric
+    );
 
     const isHitSelected = (currentMetric === 'service_count');
     renderDayHourHeatmap(combinedHeatmapData, isHitSelected, currentMetric);
@@ -1753,49 +1603,11 @@ function renderDayHourHeatmap(data, isHitSelected, metric) {
   const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   const hours = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'));
 
-  // Group data by day and hour
-  // dayHourMap[dayIndex][hourIndex] = { sum: 0, count: 0, data: [] }
-  const dayHourMap = Array.from({ length: 7 }, () => Array.from({ length: 24 }, () => ({ sum: 0, count: 0, data: [] })));
+  // 曜日×時間 (7×24) に集計。dayHourMap[曜日][時] = { sum, count, data[] }
+  const dayHourMap = buildDayHourMap(data);
 
-  // Group items by date, then map each date's items to hours 0..23 in order
-  const groupedByDate = {};
-  data.forEach(item => {
-    const dateKey = String(item.time).substring(0, 8);
-    if (!groupedByDate[dateKey]) groupedByDate[dateKey] = [];
-    groupedByDate[dateKey].push(item);
-  });
-
-  Object.entries(groupedByDate).forEach(([dateKey, items]) => {
-    const year = parseInt(dateKey.substring(0, 4));
-    const month = parseInt(dateKey.substring(4, 6)) - 1;
-    const day = parseInt(dateKey.substring(6, 8));
-    const date = new Date(year, month, day);
-    const dayIdx = date.getDay();
-
-    // 時刻は time 文字列 (yyyyMMddHH...) の HH から求める。
-    // 欠測の時間帯や当日の部分データがあっても、セルが隣へずれないようにするため。
-    // HH が取れない形式の場合のみ、従来どおり日内の順序で代用する。
-    items.forEach((item, posInDay) => {
-      const hh = parseInt(String(item.time).substring(8, 10), 10);
-      const hour = Number.isInteger(hh) && hh >= 0 && hh < 24 ? hh : posInDay % 24;
-      if (item.count > 0) {
-        dayHourMap[dayIdx][hour].sum += item.value;
-        dayHourMap[dayIdx][hour].count++;
-        // Add item to data array for sliding layer
-        dayHourMap[dayIdx][hour].data.push(item);
-      }
-    });
-  });
-
-  // Calculate average for each day-hour slot
-  const allAverages = [];
-  dayHourMap.forEach(day => {
-    day.forEach(hour => {
-      if (hour.count > 0) {
-        allAverages.push(hour.sum / hour.count);
-      }
-    });
-  });
+  // 各セルの平均値 (しきい値の算出に使う)
+  const allAverages = dayHourAverages(dayHourMap);
 
   // Calculate dynamic thresholds if not already stored for the current metric
   let goodThreshold, warningThreshold;
@@ -1808,28 +1620,10 @@ function renderDayHourHeatmap(data, isHitSelected, metric) {
     goodThreshold = 100;
     warningThreshold = 300;
 
-    if (allAverages.length > 0) {
-      allAverages.sort((a, b) => a - b);
-      const percentile = (arr, p) => {
-        if (arr.length === 0) return 0;
-        if (typeof p !== 'number') throw new TypeError('p must be a number');
-        if (p <= 0) return arr[0];
-        if (p >= 1) return arr[arr.length - 1];
-        const index = (arr.length - 1) * p;
-        const lower = Math.floor(index);
-        const upper = lower + 1;
-        const weight = index % 1;
-        if (upper >= arr.length) return arr[lower];
-        return arr[lower] * (1 - weight) + arr[upper] * weight;
-      };
-
-      const q1 = percentile(allAverages, 0.25);
-      const q3 = percentile(allAverages, 0.75);
-      const iqr = q3 - q1;
-
-      goodThreshold = q3;
-      warningThreshold = q3 + (1.5 * iqr);
-
+    const computed = computeIqrThresholds(allAverages);
+    if (computed) {
+      goodThreshold = computed.good;
+      warningThreshold = computed.warning;
       // Cache these thresholds so they persist during chart selections (filtering period)
       metricThresholds[metric] = { good: goodThreshold, warning: warningThreshold };
     }
@@ -1990,7 +1784,7 @@ function renderOverallHeatmap(data, isHitSelected, metric) {
     return;
   }
 
-  // 1. Filter data: only items with count > 0 to find meaningful distributions
+  // 1. 件数 0 の項目を除いた有効データ (散布図の点)
   const validData = data.filter(d => d.count > 0);
   if (validData.length === 0) {
     container.innerHTML = '<div class="heatmap-placeholder">有効なデータがありません。</div>';
@@ -1999,27 +1793,18 @@ function renderOverallHeatmap(data, isHitSelected, metric) {
 
   container.innerHTML = ''; // Clear previous
 
-  // 2. Calculate Medians (Central Axes)
-  // X-axis (Hits) is always dynamic based on current data
-  const counts = validData.map(d => d.count).sort((a, b) => a - b);
-  const d3Median = (arr) => {
-    const mid = Math.floor(arr.length / 2);
-    return arr.length % 2 !== 0 ? arr[mid] : (arr[mid - 1] + arr[mid]) / 2;
-  };
-  const medianX = d3Median(counts); // X is now Hits
-  const maxX = Math.max(...counts, 1);
-
-  // Y-axis (Metric Value) is fixed based on 1-year data
+  // 2. 軸の基準値 (中央値・最大値)。X 軸 (ヒット数) は常に現在のデータから、
+  //    Y 軸 (指標値) は指標ごとに最初に求めた値を固定して使う
+  const stats = computeOverallStats(data);
+  const medianX = stats.medianX;
+  const maxX = stats.maxX;
   let medianY, maxY;
   if (overallYThresholds[metric]) {
     medianY = overallYThresholds[metric].median;
     maxY = overallYThresholds[metric].max;
   } else {
-    // Use yValue for Y-axis (performance metric)
-    const times = validData.map(d => d.yValue).sort((a, b) => a - b);
-    medianY = d3Median(times);
-    maxY = Math.max(...times, 100);
-    // Cache for this metric
+    medianY = stats.medianY;
+    maxY = stats.maxY;
     overallYThresholds[metric] = { median: medianY, max: maxY };
   }
 
@@ -2205,7 +1990,8 @@ window.hideHeatmapTooltip = function () {
 
 
 function updateSummaryCardsPartial(startIdx, endIdx) {
-  if (startIdx < 0 || endIdx < 0 || yearlyData['service_time'].length === 0) {
+  const summary = summarizeRange(yearlyData, startIdx, endIdx, { metric: currentMetric, todayStr: toYMD(new Date()) });
+  if (!summary) {
     document.getElementById('peakDate').textContent = '-';
     document.getElementById('avgResponseTime').innerHTML = `0 <span class="unit">ms</span>`;
     document.getElementById('avgTps').textContent = '0';
@@ -2214,92 +2000,17 @@ function updateSummaryCardsPartial(startIdx, endIdx) {
     return;
   }
 
-  const today = new Date();
-  const todayStr = today.getFullYear() +
-    String(today.getMonth() + 1).padStart(2, '0') +
-    String(today.getDate()).padStart(2, '0');
-
-  // 0 は「データなし」として除外するが、エラー率の 0% は正常値なので除外しない
-  // (除外すると平均エラー率が過大になる)。リクエスト 0 件の日は null なので別途除外される。
-  const calcAvg = (data, keepZero = false) => {
-    const validData = data.filter(d =>
-      d.time <= todayStr &&
-      (keepZero || d.value !== 0) && d.value !== null && d.value !== undefined
-    );
-    return validData.length ? validData.reduce((s, d) => s + d.value, 0) / validData.length : 0;
-  };
-
-  const sliceData = (metricKey) => {
-    // If the selected metric (e.g. main chart) has different length than the rest, fallback to full length of that metric
-    const arr = yearlyData[metricKey];
-    if (!arr || arr.length === 0) return [];
-    // Ensure bounds
-    const s = Math.max(0, startIdx);
-    const e = Math.min(arr.length - 1, endIdx);
-    return arr.slice(s, e + 1);
-  };
-
-  const stData = sliceData('service_time');
-  const srData = sliceData('service_rate');
-  const cuData = sliceData('concurrent_user');
-  const scData = sliceData('service_count');
-  const sysCpuData = sliceData('sys_cpu');
-  const heapUsageData = sliceData('heap_usage');
-  const errRateData = sliceData('err_rate');
-
-  // Peak Date (Based on currently selected metric)
-  const currentData = sliceData(currentMetric);
-  if (currentData.length > 0) {
-    let maxEntry = currentData[0];
-    currentData.forEach(entry => {
-      if (entry.value > maxEntry.value) maxEntry = entry;
-    });
-    document.getElementById('peakDate').textContent = parseDateString(maxEntry.time, true);
-  } else {
-    document.getElementById('peakDate').textContent = '-';
-  }
-
-  const avgST = calcAvg(stData);
-  const avgSR = calcAvg(srData);
-  const avgCU = calcAvg(cuData);
-  const avgSC = calcAvg(scData);
-  const avgSysCpu = calcAvg(sysCpuData);
-  const avgHeapUsage = calcAvg(heapUsageData);
-  const avgErrRate = calcAvg(errRateData, true);
-
-  document.getElementById('avgResponseTime').innerHTML = `${Math.round(avgST).toLocaleString()} <span class="unit">ms</span>`;
-  document.getElementById('avgTps').textContent = avgSR.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  document.getElementById('avgConcurrentUsers').textContent = Math.round(avgCU).toLocaleString();
-  document.getElementById('avgHits').textContent = Math.round(avgSC).toLocaleString();
+  const fixed2 = { minimumFractionDigits: 2, maximumFractionDigits: 2 };
+  document.getElementById('peakDate').textContent = summary.peakDate ?? '-';
+  document.getElementById('avgResponseTime').innerHTML = `${Math.round(summary.avgResponseTime).toLocaleString()} <span class="unit">ms</span>`;
+  document.getElementById('avgTps').textContent = summary.avgTps.toLocaleString(undefined, fixed2);
+  document.getElementById('avgConcurrentUsers').textContent = Math.round(summary.avgConcurrentUsers).toLocaleString();
+  document.getElementById('avgHits').textContent = Math.round(summary.avgHits).toLocaleString();
   const isInstanceSelected = !!(document.getElementById('instanceSelect').value);
-  document.getElementById('avgErrRate').textContent = `${avgErrRate.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`;
-  document.getElementById('avgSysCpu').textContent = isInstanceSelected ? `${Math.round(avgSysCpu)}%` : '-';
-  document.getElementById('avgHeapUsage').textContent = isInstanceSelected ? `${Math.round(avgHeapUsage)}%` : '-';
+  document.getElementById('avgErrRate').textContent = `${summary.avgErrRate.toLocaleString(undefined, fixed2)}%`;
+  document.getElementById('avgSysCpu').textContent = isInstanceSelected ? `${Math.round(summary.avgSysCpu)}%` : '-';
+  document.getElementById('avgHeapUsage').textContent = isInstanceSelected ? `${Math.round(summary.avgHeapUsage)}%` : '-';
 }
-
-// Utilities
-function formatDateParam(date) {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
-  const h = String(date.getHours()).padStart(2, '0');
-  return `${y}${m}${d}${h}`;
-}
-
-function getMetricUnit(metric) {
-  switch (metric) {
-    case 'service_time': return 'ms';
-    case 'service_rate': return 'TPS';
-    case 'concurrent_user': return '人';
-    case 'service_count': return 'Hits';
-    case 'sys_cpu':
-    case 'max_sys_cpu':
-    case 'heap_usage':
-    case 'err_rate': return '%';
-    default: return '';
-  }
-}
-
 
 // Keyboard Navigation for Chart Selection
 window.addEventListener('keydown', (e) => {
@@ -2401,30 +2112,6 @@ window.addEventListener('keydown', (e) => {
     }
   }
 });
-
-// API 由来の文字列を innerHTML に埋め込む際のエスケープ
-function escapeHtml(value) {
-  return String(value).replace(/[&<>"']/g, (c) =>
-    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])
-  );
-}
-
-function formatYMDLocal(str) {
-  const y = str.substring(0, 4);
-  const m = str.substring(4, 6);
-  const d = str.substring(6, 8);
-  return `${y}.${m}.${d}`;
-}
-
-function parseDateString(dateStr, full = false) {
-  if (!dateStr || dateStr.length < 8) return dateStr;
-  const y = dateStr.substring(0, 4);
-  const m = dateStr.substring(4, 6);
-  const d = dateStr.substring(6, 8);
-  if (full) return `${y}-${m}-${d}`;
-  return `${m}/${d}`;
-}
-
 
 // Fallback logic for when API is unreachable due to CORS or local network issues
 function mockDataOnFailPartial() {
