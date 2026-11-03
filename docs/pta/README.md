@@ -9,7 +9,7 @@ JENNIFER5 OpenAPI를 활용한 성능 추이 분석 도구입니다.
 
 - **Vite** (빌드 도구 / 개발 서버)
 - **Chart.js** (메인 시계열 차트, npm 의존성)
-- **D3.js / d3-hexbin** (Overall 히트맵, 요일×시간대 히트맵, CDN 로드)
+- **d3-selection / d3-scale / d3-array / d3-hexbin** (Overall 히트맵, 요일×시간대 히트맵, npm 의존성으로 번들)
 - **Pretendard JP** (웹 폰트, CDN 로드)
 
 ---

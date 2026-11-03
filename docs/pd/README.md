@@ -17,7 +17,7 @@ JENNIFER5 OpenAPI 의 **X-View 트랜잭션 점 데이터**를 수집해 응답�
 
 ## 기술 스택
 
-- **Vite 4** (빌드 / 개발 서버 / API 프록시)
+- **Vite 8** (빌드 / 개발 서버 / API 프록시)
 - **Chart.js 4** (히스토그램·CDF·랭킹, npm 의존성)
 - **Pretendard JP** (웹 폰트, CDN)
 

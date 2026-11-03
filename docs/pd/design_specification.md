@@ -44,7 +44,7 @@ PTA が **集計済み時系列 (dbmetrics)** を扱うのに対し、本シス�
 ## 2. 技術スタック (PTA 同一)
 
 - **Core**: HTML5, Vanilla JavaScript (ES6+), CSS3
-- **Build**: Vite 4 (開発サーバ / MPA バンドル / API プロキシ)
+- **Build**: Vite 8 (開発サーバ / MPA バンドル / API プロキシ)
 - **Visualization**: Chart.js 4 (npm 依存)
   - パーセンタイル垂直線は Chart.js カスタムプラグインで実装 (annotation プラグイン不使用)
 - **Fonts**: Pretendard JP (CDN)
@@ -322,7 +322,7 @@ jennifer-labo/                      # PTA・PD 統合 Vite マルチページア
 
 ### 8.2 開発サーバ
 - ポート **5177** (PTA・PD 共通の単一ポート、`strictPort: true`。旧 PD 専用の 5178 は廃止)
-- `/api` → `https://demo.jennifersoft.co.jp/` にプロキシ (`vite.config.js` の `target`)、`secure: false`
+- `/api` → `https://demo.jennifersoft.co.jp/` にプロキシ (`vite.config.js` の `target`)、`secure: true` (既定。自己署名証明書のサーバで開発する場合のみ `DEV_INSECURE_TLS=1`)。開発サーバは既定で `localhost` のみにバインド (`DEV_HOST` で変更)
 - `proxyReq` フックで `.env` の `DEV_API_TOKEN` を `token` クエリに注入
 - `proxyRes` フックで CORS 関連ヘッダを注入 (PTA と共通の設定)
 

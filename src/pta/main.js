@@ -1,4 +1,13 @@
 import Chart from 'chart.js/auto';
+// d3 は CDN ではなく npm 依存として同梱する (外部ネットワーク遮断環境でも動作し、
+// package-lock.json の整合性ハッシュでバージョンが固定されるため)。必要なモジュールのみ読み込む。
+import { select, selectAll } from 'd3-selection';
+import { scaleLinear, scaleSequential } from 'd3-scale';
+import { max, min } from 'd3-array';
+import { hexbin } from 'd3-hexbin';
+
+// 既存コードの `d3.xxx` 呼び出しをそのまま使うための名前空間
+const d3 = { select, selectAll, scaleLinear, scaleSequential, max, min, hexbin };
 
 // Runtime configuration (pta/config.js에서 window.PTA_CONFIG로 로드)
 const PTA_CFG = window.PTA_CONFIG || {};
@@ -511,9 +520,11 @@ function createPopover(items, onSelect, level = 0, currentLevelPath = []) {
         <span class="popover-item-icon">
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
         </span>
-        <span>${item.name}</span>
+        <span class="popover-item-name"></span>
       </div>
     `;
+    // ドメイン/グループ名は API 由来の文字列なので、HTML として解釈させず textContent で入れる
+    el.querySelector('.popover-item-name').textContent = item.name;
 
     el.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -1478,7 +1489,7 @@ async function handleChartSelectionChanged() {
       const startStr = currentMetricData[0].time;
       const endStr = currentMetricData[currentMetricData.length - 1].time;
 
-      rangeDisplay.innerHTML = `${formatYMDLocal(startStr)} <span style="color: var(--text-secondary); margin: 0 4px; font-weight: 500;">-</span> ${formatYMDLocal(endStr)}`;
+      rangeDisplay.innerHTML = `${escapeHtml(formatYMDLocal(startStr))} <span style="color: var(--text-secondary); margin: 0 4px; font-weight: 500;">-</span> ${escapeHtml(formatYMDLocal(endStr))}`;
 
       const sYear = parseInt(startStr.substring(0, 4), 10);
       const sMonth = parseInt(startStr.substring(4, 6), 10) - 1;
@@ -1536,7 +1547,7 @@ async function handleChartSelectionChanged() {
     const startStr = currentMetricData[startIdx].time.substring(0, 8); // yyyymmdd
     const endStr = currentMetricData[endIdx].time.substring(0, 8);
 
-    rangeDisplay.innerHTML = `${formatYMDLocal(startStr)} <span style="color: var(--text-secondary); margin: 0 4px; font-weight: 500;">-</span> ${formatYMDLocal(endStr)}`;
+    rangeDisplay.innerHTML = `${escapeHtml(formatYMDLocal(startStr))} <span style="color: var(--text-secondary); margin: 0 4px; font-weight: 500;">-</span> ${escapeHtml(formatYMDLocal(endStr))}`;
 
     // 2. Filter data for Summary Cards
     updateSummaryCardsPartial(startIdx, endIdx);
@@ -1751,7 +1762,8 @@ function renderDayHourHeatmap(data, isHitSelected, metric) {
   const legendDangerText = document.getElementById('legendDangerText');
 
   if (legendGoodText && legendWarningText && legendDangerText) {
-    const unit = isHitSelected ? 'ms' : getMetricUnit(metric);
+    // ヒートマップのセル値は選択中の指標そのもの (ヒット数選択時はヒット数) なので、単位も指標に従う
+    const unit = getMetricUnit(metric);
     if (allAverages.length > 0) {
       const formatThreshold = (val) => val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
       legendGoodText.innerHTML = `安定 <span style="font-size: 0.65rem; color: #94a3b8; margin-left: 2px;">(≤ ${formatThreshold(goodThreshold)}${unit})</span>`;
@@ -1796,7 +1808,7 @@ function renderDayHourHeatmap(data, isHitSelected, metric) {
         bgColor = colorScale(avg);
       }
 
-      const unit = isHitSelected ? 'ms' : getMetricUnit(metric);
+      const unit = getMetricUnit(metric);
       const formattedAvg = avg.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
       const tooltipText = cell.count > 0 ? `${day} ${h}:00<br/>Avg: ${formattedAvg}${unit}` : 'No data';
       html += `<td style="background-color: ${bgColor}; cursor: ${cell.count > 0 ? 'pointer' : 'default'};" 
@@ -1842,7 +1854,10 @@ window.showDayHourListLayer = function (binData, metric, isHitSelected) {
 
   // Set Metric Header Unit
   const unit = isHitSelected ? 'ms' : getMetricUnit(metric);
-  const labelName = document.querySelector(`.metric-btn[data-metric="${metric}"]`)?.textContent || 'Value';
+  // 一覧に表示する値は yValue (ヒット数選択時は応答時間) なので、見出しもそれに合わせる
+  const labelName = isHitSelected
+    ? '応答時間'
+    : (document.querySelector(`.metric-btn[data-metric="${metric}"]`)?.textContent || 'Value');
   metricHeader.textContent = `${labelName}`; // Kept short, unit included in text
 
   // Sort chronologically
@@ -1863,8 +1878,8 @@ window.showDayHourListLayer = function (binData, metric, isHitSelected) {
     const dateFormatted = `${yyyy}.${MM}.${dd}`;
 
     const value = item.yValue !== undefined ? item.yValue : item.value;
-    const metricFormatted = `${formatVal(value)}${unit}`;
-    const barWidthPercent = (value / maxVal) * 100;
+    const metricFormatted = escapeHtml(`${formatVal(value)}${unit}`);
+    const barWidthPercent = Number.isFinite(value / maxVal) ? (value / maxVal) * 100 : 0;
 
     // Horizontal Bar with value
     const barHtml = `
@@ -1879,7 +1894,7 @@ window.showDayHourListLayer = function (binData, metric, isHitSelected) {
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td>${index + 1}</td>
-      <td>${dateFormatted}</td>
+      <td>${escapeHtml(dateFormatted)}</td>
       <td>${barHtml}</td>
     `;
 
@@ -2306,6 +2321,13 @@ window.addEventListener('keydown', (e) => {
   }
 });
 
+// API 由来の文字列を innerHTML に埋め込む際のエスケープ
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (c) =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])
+  );
+}
+
 function formatYMDLocal(str) {
   const y = str.substring(0, 4);
   const m = str.substring(4, 6);
@@ -2387,12 +2409,10 @@ function closeAllDetailLayers() {
     overallLayer.classList.remove('open');
 
     // Remove hexagon highlight when layer is closed
-    if (window.d3) {
-      d3.selectAll('.hexagon-group path.selected-hex')
-        .classed('selected-hex', false)
-        .attr('stroke', 'white')
-        .attr('stroke-width', '0.5');
-    }
+    d3.selectAll('.hexagon-group path.selected-hex')
+      .classed('selected-hex', false)
+      .attr('stroke', 'white')
+      .attr('stroke-width', '0.5');
   }
 
   const dayHourLayer = document.getElementById('dayHourDetailLayer');
@@ -2454,10 +2474,10 @@ window.showOverallListLayer = function (dataPoints, metric, isHitSelected) {
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td>${index + 1}</td>
-      <td>${dateFormatted}</td>
-      <td>${timeFormatted}</td>
-      <td>${hitsFormatted}</td>
-      <td>${metricFormatted}</td>
+      <td>${escapeHtml(dateFormatted)}</td>
+      <td>${escapeHtml(timeFormatted)}</td>
+      <td>${escapeHtml(hitsFormatted)}</td>
+      <td>${escapeHtml(metricFormatted)}</td>
     `;
 
     // 상세 팝업 오픈 로직 제거 (detail_overall.html 삭제됨)

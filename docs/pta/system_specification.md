@@ -8,7 +8,7 @@
 - **목적**: 1년 단위의 장기 성능 데이터를 시각화하고, 특정 기간의 성능 추이 및 분포를 다각도로 분석.
 - **기술 스택**:
   - **Core**: HTML5, Vanilla JavaScript (ES6+), CSS3
-  - **Visualization**: Chart.js (Main Chart), D3.js (Heatmaps, Hexbin) — CDN 로드
+  - **Visualization**: Chart.js (Main Chart), D3 모듈 (d3-selection/scale/array/hexbin; Heatmaps, Hexbin) — npm 의존성으로 번들
   - **Fonts**: Pretendard JP (CDN 로드)
   - **Build**: Vite (개발 서버, 번들링, API 프록시)
 - **멀티 페이지 구조**: Vite MPA(Multi-Page Application) 방식으로 구성
@@ -131,7 +131,8 @@
 
 ### 5.2 개발 서버 프록시
 - Vite 개발 서버(포트 `5177`, PTA·PD 공용 단일 포트, `strictPort: true`)에서 `/api` 경로 요청을 `https://demo.jennifersoft.co.jp/`로 프록시 (`vite.config.js`의 `target`).
-- `secure: false` 설정으로 자가서명 인증서 환경 지원.
+- 업스트림 TLS 인증서는 기본으로 검증하며(`secure: true`), 자가서명 인증서 서버로 개발할 때만 `.env`의 `DEV_INSECURE_TLS=1`로 검증을 끈다.
+- 개발 서버는 기본으로 `localhost`에만 바인딩한다(프록시가 토큰을 주입하므로). 외부 접속이 필요하면 `.env`의 `DEV_HOST`를 지정한다.
 - `configure` 훅에서 `proxy.on('proxyReq', ...)`을 통해, 업스트림으로 요청이 전달되기 직전에 `.env`의 `DEV_API_TOKEN` 값을 `token` 쿼리파라미터로 주입 (클라이언트 코드는 토큰을 모름).
 - 같은 훅에서 `proxy.on('proxyRes', ...)`으로 CORS 관련 헤더(`Cross-Origin-Resource-Policy` 등) 주입.
 - 운영 환경(nginx)에서는 `map`으로 만든 쿼리(`$args&token=<token>`)를 `set $args`로 적용해 동일한 역할을 수행. 토큰은 별도 파일로 분리하고, API 화이트리스트·Basic 인증·HTTPS를 함께 적용 ([공통 배포 가이드](../DEPLOY_GUIDE_NGINX.md) 참고).

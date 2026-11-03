@@ -4,17 +4,31 @@ export default defineConfig(({ mode }) => {
     // DEV_API_TOKEN은 .env(gitignore 대상)에서 로드. 클라이언트 번들에는 절대 포함되지 않음.
     const env = loadEnv(mode, process.cwd(), '');
 
+    // 개발 서버의 /api 프록시는 DEV_API_TOKEN 을 자동으로 붙이므로, 서버에 접근할 수 있는 누구나
+    // 토큰 권한으로 JENNIFER API 를 호출할 수 있다. 기본은 localhost 로만 연다.
+    // VM/컨테이너 등에서 외부 접속이 필요하면 .env 에 DEV_HOST=0.0.0.0 을 명시한다.
+    const devHost = env.DEV_HOST || 'localhost';
+    const isLoopback = ['localhost', '127.0.0.1', '::1'].includes(devHost);
+    if (!isLoopback && env.DEV_API_TOKEN) {
+        console.warn(
+            `[jennifer-labo] 경고: 개발 서버가 ${devHost} 에 열려 있고 /api 프록시가 DEV_API_TOKEN 을 주입합니다. ` +
+            '신뢰할 수 있는 네트워크에서만 사용하세요.'
+        );
+    }
+    // 업스트림 TLS 인증서는 기본으로 검증한다. 자가 서명 인증서 서버를 쓸 때만 DEV_INSECURE_TLS=1 로 끈다.
+    const verifyUpstreamTls = env.DEV_INSECURE_TLS !== '1';
+
     return {
         base: './', // 빌드 시 상대 경로 사용
         server: {
-            host: '0.0.0.0',
+            host: devHost,
             port: 5177, // 통합 앱 단일 포트
             strictPort: true,
             proxy: {
                 '/api': {
                     target: 'https://demo.jennifersoft.co.jp/',
                     changeOrigin: true,
-                    secure: false,
+                    secure: verifyUpstreamTls,
                     configure: (proxy) => {
                         // 운영 nginx의 토큰 주입(set $args)과 동일한 역할: 클라이언트는 토큰을 모르고,
                         // 개발 서버 프록시가 업스트림으로 전달하기 직전에 토큰을 붙여준다.

@@ -14,9 +14,9 @@ JENNIFER5 OpenAPI를 활용한 분석 도구 모음입니다. 하나의 Vite 멀
 
 ## 기술 스택
 
-- **Vite 4** (빌드 / 개발 서버 / API 프록시)
+- **Vite 8** (빌드 / 개발 서버 / API 프록시) — Node.js `^20.19.0` 또는 `>=22.12.0` 필요
 - **Chart.js 4** (차트, npm 의존성 — PTA·PD가 번들 청크를 공유)
-- **D3.js / d3-hexbin** (PTA 히트맵, CDN 로드)
+- **d3-selection / d3-scale / d3-array / d3-hexbin** (PTA 히트맵, npm 의존성으로 번들 — 외부망 없이도 동작)
 - **Pretendard JP** (웹 폰트, CDN 로드)
 
 ---
@@ -55,7 +55,7 @@ dist/
 ├── index.html                # 랜딩
 ├── pta/  (index.html, help.html, config.js, asserts/)
 ├── pd/   (index.html, help.html, config.js, asserts/)
-└── shared/asserts/           # PTA·PD 공용 청크 (chart.js 등) 및 CSS
+└── shared/asserts/           # PTA·PD 공용 청크 (chart.js 등). CSS 는 각 앱의 asserts/ 아래
 ```
 
 ---
@@ -112,6 +112,11 @@ npm run dev
 - 랜딩 페이지: `http://localhost:5177/`
 - PTA 대시보드: `http://localhost:5177/pta/`
 - PD 대시보드: `http://localhost:5177/pd/`
+
+> 개발 서버는 기본으로 **본인 PC(localhost)에서만** 접속됩니다. 프록시가 `DEV_API_TOKEN`을 자동으로 붙이기 때문에
+> 외부에 열면 같은 네트워크의 누구나 그 토큰으로 API를 호출할 수 있어서입니다. VM/컨테이너 밖에서 접속해야 하면
+> `.env`에 `DEV_HOST=0.0.0.0`을 지정하세요. 업스트림 TLS 인증서는 기본으로 검증하며, 자가 서명 인증서 서버를 쓸 때만
+> `DEV_INSECURE_TLS=1`로 끕니다 (자세한 내용은 `.env.example`).
 
 개발 서버의 `/api` 요청은 `https://demo.jennifersoft.co.jp/` 로 프록시됩니다 (`vite.config.js`).
 
