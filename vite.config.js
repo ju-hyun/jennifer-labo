@@ -42,6 +42,24 @@ export default defineConfig(({ mode }) => {
                         proxy.on('proxyRes', (proxyRes) => {
                             proxyRes.headers['Cross-Origin-Resource-Policy'] = 'cross-origin';
                         });
+                        // 업스트림 인증서 검증에 실패했을 때, 원인과 해결 방법을 한 번만 안내한다.
+                        // (PTA 는 한 화면에서 약 100건을 동시에 요청하므로 같은 오류가 대량으로 나온다)
+                        let certHintShown = false;
+                        proxy.on('error', (err) => {
+                            const isCertError = /SELF.SIGNED|UNABLE_TO_(GET_ISSUER|VERIFY)|CERT_|certificate/i
+                                .test(`${err.code ?? ''} ${err.message ?? ''}`);
+                            if (!isCertError || certHintShown) return;
+                            certHintShown = true;
+                            console.error(
+                                '\n[jennifer-labo] 업스트림(' + apiTarget + ')의 TLS 인증서를 검증하지 못했습니다.\n' +
+                                '  자가 서명 인증서이거나, 사내 보안 장비(TLS 검사)의 CA 가 Node 에 등록되어 있지 않은 경우입니다.\n' +
+                                '  해결 방법 (둘 중 하나):\n' +
+                                '   1) [간단] .env 에 DEV_INSECURE_TLS=1 을 추가하고 개발 서버를 다시 시작\n' +
+                                '      (인증서 검증을 끄므로 신뢰할 수 있는 네트워크의 개발 PC 에서만 사용)\n' +
+                                '   2) [권장] 해당 CA/서버 인증서를 PEM 으로 저장해 NODE_EXTRA_CA_CERTS=/경로/ca.pem npm run dev\n' +
+                                '      (검증을 유지한 채 그 인증서만 신뢰)\n'
+                            );
+                        });
                     }
                 }
             },
