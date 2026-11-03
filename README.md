@@ -34,7 +34,7 @@ JenniferLabo/
 │   └── help.html             #   분석 가이드
 ├── src/
 │   ├── pta/                  # PTA 소스 (main 진입점 + 역할별 모듈, lib/ 순수 계산, style.css)
-│   ├── pd/                   # PD 소스 (main, api, chart, panel, stats, style.css)
+│   ├── pd/                   # PD 소스 (main 진입점 + 역할별 모듈, api, stats, chart, panel, style.css)
 │   └── shared/               # PTA·PD 공통 (http, domain-tree, html, percentile)
 ├── public/
 │   ├── pta/config.js         # PTA 런타임 설정 (window.PTA_CONFIG)

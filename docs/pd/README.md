@@ -37,7 +37,18 @@ jennifer-labo/                # PTA·PD 통합 Vite 멀티페이지 앱 (패키�
 ├── src/
 │   ├── pta/                  # PTA 소스
 │   └── pd/
-│       ├── main.js           # 엔트리 / 상태 관리 / 이벤트
+│       ├── main.js           # 엔트리 (초기화만 담당)
+│       ├── config.js         # window.PD_CONFIG 참조, MOCK_ALLOWED, CONFIRM_CHUNKS
+│       ├── state.js          # 화면 전체가 공유하는 상태와 차트 인스턴스
+│       ├── dom.js            # DOM 요소 참조
+│       ├── notice.js         # 알림 바
+│       ├── range.js          # 조회 기간(시작/종료·프리셋)과 청크 수 표시
+│       ├── targets.js        # 도메인 브레드크럼, 인스턴스/비즈니스 목록
+│       ├── collect.js        # X-View 수집(照会 버튼)과 실패 시 처리
+│       ├── view.js           # 필터·재계산, 요약/차트/상세 패널 렌더링
+│       ├── events.js         # DOM 이벤트 바인딩
+│       ├── csv.js            # CSV 내보내기
+│       ├── help.js           # 도움말 창
 │       ├── api.js            # OpenAPI 호출 · 1분 청크 순차 수집
 │       ├── stats.js          # TxStore(SoA) · 백분위 · 히스토그램 빈
 │       ├── chart.js          # Chart.js 구성 + 백분위 오버레이 플러그인

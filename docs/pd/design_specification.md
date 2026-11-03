@@ -289,7 +289,13 @@ jennifer-labo/                      # PTA・PD 統合 Vite マルチページア
 │   ├── pta/                    # PTA ソース (main + 役割別モジュール, lib/ 純粋関数, style.css)
 │   ├── shared/                 # PTA・PD 共通 (http, domain-tree, html, percentile)
 │   └── pd/
-│       ├── main.js             # エントリ / 状態管理 / イベント束ね
+│       ├── main.js             # エントリ (初期化のみ)
+│       ├── config.js / state.js / dom.js / notice.js   # 設定・共有状態・DOM 参照・通知バー
+│       ├── range.js            # 照会期間 (開始/終了・プリセット)
+│       ├── targets.js          # ドメイン階層セレクタ・インスタンス/ビジネス一覧
+│       ├── collect.js          # X-View 収集 (照会ボタン) と失敗時の扱い
+│       ├── view.js             # 絞り込み・再計算とサマリ/チャート/詳細パネルの描画
+│       ├── events.js / csv.js / help.js   # イベントの束ね・CSV 出力・ヘルプ
 │       ├── api.js              # OpenAPI 呼び出し・1分チャンク逐次収集
 │       ├── stats.js            # パーセンタイル・ヒストグラムビン・要約統計
 │       ├── chart.js            # Chart.js 構成 + パーセンタイル オーバーレイ
