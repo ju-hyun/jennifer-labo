@@ -1,6 +1,7 @@
 /**
  * PTA ヒートマップ用のデータ処理 (純粋関数。DOM・グローバル状態に依存しない)
  */
+import { percentile } from '../../shared/percentile.js';
 
 /**
  * 時間別の「値」「応答時間」「件数」を time をキーに結合する。
@@ -87,22 +88,6 @@ export function dayHourAverages(dayHourMap) {
 }
 
 /**
- * p (0〜1) 分位数 (線形補間)。arr は昇順ソート済みであること。
- */
-export function quantile(arr, p) {
-  if (arr.length === 0) return 0;
-  if (typeof p !== 'number') throw new TypeError('p must be a number');
-  if (p <= 0) return arr[0];
-  if (p >= 1) return arr[arr.length - 1];
-  const index = (arr.length - 1) * p;
-  const lower = Math.floor(index);
-  const upper = lower + 1;
-  const weight = index % 1;
-  if (upper >= arr.length) return arr[lower];
-  return arr[lower] * (1 - weight) + arr[upper] * weight;
-}
-
-/**
  * IQR 法で「安定 / 警戒 / 高負荷」の境界を決める。
  * 安定: Q3 以下、警戒: Q3 + 1.5×IQR 以下、それを超えると高負荷。
  * 注意: 境界はそのデータの分布に対する相対値であり、絶対的な性能基準ではない。
@@ -112,8 +97,8 @@ export function quantile(arr, p) {
 export function computeIqrThresholds(averages) {
   if (averages.length === 0) return null;
   const sorted = [...averages].sort((a, b) => a - b);
-  const q1 = quantile(sorted, 0.25);
-  const q3 = quantile(sorted, 0.75);
+  const q1 = percentile(sorted, 25);
+  const q3 = percentile(sorted, 75);
   return { good: q3, warning: q3 + (1.5 * (q3 - q1)) };
 }
 

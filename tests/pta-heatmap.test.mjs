@@ -2,7 +2,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  combineHeatmapData, buildDayHourMap, dayHourAverages, quantile,
+  combineHeatmapData, buildDayHourMap, dayHourAverages,
   computeIqrThresholds, median, computeOverallStats
 } from '../src/pta/lib/heatmap-data.js';
 
@@ -76,16 +76,7 @@ describe('buildDayHourMap', () => {
   });
 });
 
-describe('quantile / computeIqrThresholds / median', () => {
-  test('quantile は線形補間', () => {
-    assert.equal(quantile([10, 20, 30, 40, 50], 0.25), 20);
-    assert.equal(quantile([10, 20, 30, 40, 50], 0.9), 46);
-    assert.equal(quantile([], 0.5), 0);
-    assert.equal(quantile([5], 0.99), 5);
-    assert.equal(quantile([1, 2, 3], 0), 1);
-    assert.equal(quantile([1, 2, 3], 1), 3);
-  });
-
+describe('computeIqrThresholds / median', () => {
   test('IQR 法: good=Q3, warning=Q3+1.5*IQR (入力順は問わない)', () => {
     // sorted: 10,20,30,40,50 -> Q1=20, Q3=40, IQR=20
     const t = computeIqrThresholds([50, 10, 40, 20, 30]);

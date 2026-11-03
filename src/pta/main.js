@@ -7,8 +7,11 @@ import { max, min } from 'd3-array';
 import { hexbin } from 'd3-hexbin';
 
 import {
-  formatDateParam, toYMD, getMetricUnit, escapeHtml, formatYMDLocal, parseDateString
+  formatDateParam, toYMD, getMetricUnit, formatYMDLocal, parseDateString
 } from './lib/format.js';
+import { escapeHtml } from '../shared/html.js';
+import { getJson, isUnauthorized } from '../shared/http.js';
+import { buildDomainTree, findFirstDomain } from '../shared/domain-tree.js';
 import {
   mergeSeries, flattenSorted, computeErrRate, calculateSMA, computeMonthlyAverages, summarizeRange
 } from './lib/series.js';
@@ -331,19 +334,7 @@ async function loadDomains() {
   const urlString = url.toString();
 
   try {
-    const response = await fetch(urlString, {
-      method: 'GET',
-      headers: { 'Accept': 'application/json' }
-    });
-
-    if (response.status === 401) {
-      showConfigError('Authentication failed. Please contact the site administrator to check the server-side API token.', 'Unauthorized (401)');
-      return false;
-    }
-
-    if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
-
-    const data = await response.json();
+    const data = await getJson(url);
     let flatDomains = data.result || [];
 
     // Sort by domainId ascending
@@ -362,6 +353,10 @@ async function loadDomains() {
     return true;
 
   } catch (error) {
+    if (isUnauthorized(error)) {
+      showConfigError('Authentication failed. Please contact the site administrator to check the server-side API token.', 'Unauthorized (401)');
+      return false;
+    }
     console.error('Failed to load domains. URL:', urlString, '\nError:', error);
     if (error.name === 'TypeError') {
       console.warn('Network error or CORS issue suspected.');
@@ -396,50 +391,6 @@ async function loadDomains() {
     renderHierarchicalSelector();
     return false;
   }
-}
-
-function buildDomainTree(flatDomains) {
-  const tree = [];
-
-  flatDomains.forEach(domain => {
-    let currentLevel = tree;
-    const hierarchy = domain.groupHierarchy?.length ? domain.groupHierarchy : ['未分類ドメイン'];
-
-    hierarchy.forEach((groupName) => {
-      let group = currentLevel.find(item => item.name === groupName && item.type === 'group');
-      if (!group) {
-        group = {
-          name: groupName,
-          type: 'group',
-          children: []
-        };
-        currentLevel.push(group);
-      }
-      currentLevel = group.children;
-    });
-
-    currentLevel.push({
-      id: domain.domainId,
-      name: domain.name,
-      type: 'domain'
-    });
-  });
-
-  return tree;
-}
-
-function findFirstDomain(nodes, path = []) {
-  for (const node of nodes) {
-    const currentPath = [...path, { id: node.id, name: node.name, type: node.type }];
-    if (node.type === 'domain') {
-      return { node, path: currentPath };
-    }
-    if (node.children && node.children.length > 0) {
-      const found = findFirstDomain(node.children, currentPath);
-      if (found) return found;
-    }
-  }
-  return null;
 }
 
 function updateSelectedPath(path) {
@@ -615,19 +566,7 @@ async function loadInstances(domainId) {
   const urlString = url.toString();
 
   try {
-    const response = await fetch(urlString, {
-      method: 'GET',
-      headers: { 'Accept': 'application/json' }
-    });
-
-    if (response.status === 401) {
-      showConfigError('Authentication failed. Please contact the site administrator to check the server-side API token.', 'Unauthorized (401)');
-      return;
-    }
-
-    if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
-
-    const data = await response.json();
+    const data = await getJson(url);
     let instances = data.result || [];
 
     // Sort by instanceId ascending
@@ -642,6 +581,10 @@ async function loadInstances(domainId) {
       instanceSelect.appendChild(option);
     });
   } catch (error) {
+    if (isUnauthorized(error)) {
+      showConfigError('Authentication failed. Please contact the site administrator to check the server-side API token.', 'Unauthorized (401)');
+      return;
+    }
     console.error(`Failed to load instances for domain ${domainId}. URL: ${urlString}`, error);
 
     // 本番ではダミーのインスタンスを出さない (実在しないインスタンスを選ばせないため)
@@ -673,14 +616,7 @@ async function fetchBusinesses(domainId) {
   url.searchParams.append('domain_id', domainId);
 
   try {
-    const response = await fetch(url.toString(), {
-      method: 'GET',
-      headers: { 'Accept': 'application/json' }
-    });
-
-    if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
-
-    const data = await response.json();
+    const data = await getJson(url);
     let businesses = data.result || [];
 
     // Clear and populate business select box
@@ -861,25 +797,13 @@ async function fetchMetricData(domainId, targetId, targetType, startTime, endTim
   url.searchParams.append('metrics', metrics);
 
   try {
-    const response = await fetch(url.toString(), {
-      method: 'GET',
-      headers: {
-        'Accept': 'application/json'
-      }
-    });
-
-    if (response.status === 401) {
+    const data = await getJson(url);
+    return data.result || [];
+  } catch (error) {
+    if (isUnauthorized(error)) {
       showConfigError('Authentication failed. Please contact the site administrator to check the server-side API token.', 'Unauthorized (401)');
       return [];
     }
-
-    if (!response.ok) {
-      throw new Error(`HTTP Error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    return data.result || [];
-  } catch (error) {
     console.warn(`API fetch for ${metrics} failed. URL: ${url.toString()}`, error);
     if (error.name === 'TypeError') {
       console.warn('Network error or CORS issue. If this is a local development environment, ensure the proxy is correctly configured.');

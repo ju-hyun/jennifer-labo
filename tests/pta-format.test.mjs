@@ -1,7 +1,7 @@
 // PTA フォーマット関数のテスト
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { formatDateParam, toYMD, getMetricUnit, escapeHtml, formatYMDLocal, parseDateString } from '../src/pta/lib/format.js';
+import { formatDateParam, toYMD, getMetricUnit, formatYMDLocal, parseDateString } from '../src/pta/lib/format.js';
 
 describe('日付フォーマット', () => {
   test('formatDateParam は yyyyMMddHH (ローカル時刻・ゼロ埋め)', () => {
@@ -34,15 +34,5 @@ describe('getMetricUnit', () => {
     assert.equal(getMetricUnit('concurrent_user'), '人');
     for (const m of ['sys_cpu', 'max_sys_cpu', 'heap_usage', 'err_rate']) assert.equal(getMetricUnit(m), '%');
     assert.equal(getMetricUnit('unknown'), '');
-  });
-});
-
-describe('escapeHtml', () => {
-  test('HTML の特殊文字をエスケープする', () => {
-    assert.equal(escapeHtml(`<img src=x onerror="a('b')">&`), '&lt;img src=x onerror=&quot;a(&#39;b&#39;)&quot;&gt;&amp;');
-  });
-  test('数値などは文字列化する', () => {
-    assert.equal(escapeHtml(123), '123');
-    assert.equal(escapeHtml(null), 'null');
   });
 });

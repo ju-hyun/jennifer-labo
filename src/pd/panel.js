@@ -7,6 +7,7 @@
  */
 
 import { fmtInt } from './chart.js';
+import { escapeHtml } from '../shared/html.js';
 
 let overlayEl = null;
 let panelEl = null;
@@ -33,12 +34,6 @@ function formatTime(ms) {
   const d = new Date(ms);
   const p = (n) => String(n).padStart(2, '0');
   return `${p(d.getMonth() + 1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
-}
-
-function escapeHtml(str) {
-  return String(str).replace(/[&<>"']/g, (c) =>
-    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])
-  );
 }
 
 /**

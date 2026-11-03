@@ -17,6 +17,7 @@ import {
   renderHistogram, renderCdf, renderRanking, PERCENTILE_COLORS, fmt, fmtInt
 } from './chart.js';
 import { openPanel, closePanel, isPanelOpen, MAX_ROWS as PANEL_MAX_ROWS } from './panel.js';
+import { buildDomainTree, findFirstDomain } from '../shared/domain-tree.js';
 
 const PD_CFG = window.PD_CONFIG || {};
 
@@ -152,43 +153,8 @@ function updateChunkBadge() {
 }
 
 /* ------------------------------------------------------------------ */
-/* ドメイン階層セレクタ (PTA から移植)                                  */
+/* ドメイン階層セレクタ (ツリー構築は PTA と共通: shared/domain-tree.js)                                  */
 /* ------------------------------------------------------------------ */
-
-function buildDomainTree(flatDomains) {
-  const tree = [];
-  flatDomains.forEach((domain) => {
-    let level = tree;
-    const hierarchy = domain.groupHierarchy?.length ? domain.groupHierarchy : ['未分類ドメイン'];
-
-    hierarchy.forEach((groupName) => {
-      let node = level.find((n) => n.type === 'group' && n.name === groupName);
-      if (!node) {
-        node = { type: 'group', name: groupName, children: [] };
-        level.push(node);
-      }
-      level = node.children;
-    });
-
-    level.push({
-      type: 'domain',
-      id: String(domain.domainId),
-      name: domain.name,
-      children: []
-    });
-  });
-  return tree;
-}
-
-function findFirstDomain(nodes, path = []) {
-  for (const node of nodes) {
-    const nextPath = [...path, node];
-    if (node.type === 'domain') return { node, path: nextPath };
-    const found = findFirstDomain(node.children, nextPath);
-    if (found) return found;
-  }
-  return null;
-}
 
 function closePopovers() {
   document.querySelectorAll('.breadcrumb-popover').forEach((p) => p.remove());

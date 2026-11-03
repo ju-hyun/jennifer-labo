@@ -32,13 +32,6 @@ export function getMetricUnit(metric) {
   }
 }
 
-/** API 由来の文字列を innerHTML に埋め込む際のエスケープ */
-export function escapeHtml(value) {
-  return String(value).replace(/[&<>"']/g, (c) =>
-    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])
-  );
-}
-
 /** "yyyyMMdd..." -> "yyyy.MM.dd" */
 export function formatYMDLocal(str) {
   const y = str.substring(0, 4);
