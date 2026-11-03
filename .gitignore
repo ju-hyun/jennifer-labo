@@ -30,5 +30,5 @@ dist-ssr
 deploy.sh
 
 # Spec Documents
-dayhour_heatmap_spec.md
-overall_heatmap_spec.md
+docs/pta/dayhour_heatmap_spec.md
+docs/pta/overall_heatmap_spec.md

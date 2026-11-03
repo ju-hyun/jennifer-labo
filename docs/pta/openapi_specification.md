@@ -2,7 +2,7 @@
 
 성능 트렌드 분석 시스템([system_specification.md](./system_specification.md))에서 데이터를 수집하기 위해 연동한 JENNIFER OpenAPI의 종류, 파라미터, 호출 방법 및 관련 세부 로직을 정리한 명세입니다.
 
-실제 호출부 코드는 [main.js](./src/main.js)에 구현되어 있습니다.
+실제 호출부 코드는 [main.js](../../src/pta/main.js)에 구현되어 있습니다.
 
 > **인증 방식 변경 안내**: 아래 각 API는 JENNIFER OpenAPI 자체의 요구사항으로 `token` 쿼리파라미터를 필요로 합니다.
 > 다만 본 시스템의 **프론트엔드 코드는 더 이상 `token`을 직접 전송하지 않습니다.** `/api/` 요청이 리버스 프록시를 거쳐
@@ -16,10 +16,10 @@
 
 | API 구분 | 엔드포인트 (Endpoint) | HTTP Method | 주요 용도 | 관련 소스 코드 |
 | :--- | :--- | :---: | :--- | :--- |
-| **도메인 목록 조회** | `/api/domain` | `GET` | 모니터링 대상 도메인 트리 구성 | [main.js: L291-299](https://github.com/ju-hyun/performance_trend_analysis/blob/main/src/main.js#L291-L299) |
-| **인스턴스 목록 조회** | `/api/instance` | `GET` | 선택된 도메인의 에이전트 인스턴스 목록 조회 | [main.js: L550-564](https://github.com/ju-hyun/performance_trend_analysis/blob/main/src/main.js#L550-L564) |
-| **비즈니스 목록 조회** | `/api/business` | `GET` | 선택된 도메인의 업무(서비스 그룹) 목록 조회 | [main.js: L609-619](https://github.com/ju-hyun/performance_trend_analysis/blob/main/src/main.js#L609-L619) |
-| **성능 메트릭 조회** | `/api/dbmetrics/{target}` | `GET` | 도메인/인스턴스/비즈니스별 시계열 데이터 조회 | [main.js: L764-801](https://github.com/ju-hyun/performance_trend_analysis/blob/main/src/main.js#L764-L801) |
+| **도메인 목록 조회** | `/api/domain` | `GET` | 모니터링 대상 도메인 트리 구성 | [main.js: L291-299](https://github.com/ju-hyun/jennifer-labo/blob/main/src/pta/main.js#L291-L299) |
+| **인스턴스 목록 조회** | `/api/instance` | `GET` | 선택된 도메인의 에이전트 인스턴스 목록 조회 | [main.js: L550-564](https://github.com/ju-hyun/jennifer-labo/blob/main/src/pta/main.js#L550-L564) |
+| **비즈니스 목록 조회** | `/api/business` | `GET` | 선택된 도메인의 업무(서비스 그룹) 목록 조회 | [main.js: L609-619](https://github.com/ju-hyun/jennifer-labo/blob/main/src/pta/main.js#L609-L619) |
+| **성능 메트릭 조회** | `/api/dbmetrics/{target}` | `GET` | 도메인/인스턴스/비즈니스별 시계열 데이터 조회 | [main.js: L764-801](https://github.com/ju-hyun/jennifer-labo/blob/main/src/pta/main.js#L764-L801) |
 
 ---
 

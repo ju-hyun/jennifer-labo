@@ -2,26 +2,24 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
-const files = [
-    join(__dirname, 'dist/pta/index.html'),
-    join(__dirname, 'dist/pta/help.html')
-];
+// 각 앱 페이지의 절대/상위 경로를 상대 경로(./)로 보정
+const apps = ['pta', 'pd'];
+const files = apps.flatMap(app => [
+    { app, file: join(__dirname, `dist/${app}/index.html`) },
+    { app, file: join(__dirname, `dist/${app}/help.html`) }
+]);
 
-files.forEach(file => {
-    if (fs.existsSync(file)) {
-        let content = fs.readFileSync(file, 'utf8');
-        
-        // 1. "../pta/asserts/"를 "./asserts/"로 변경
-        // 2. "../pta/vite.svg"를 "./vite.svg"로 변경 (Vite가 자동 변환했을 경우 대비)
-        content = content.replace(/\.\.\/pta\/asserts\//g, './asserts/');
-        content = content.replace(/\.\.\/pta\/vite\.svg/g, './vite.svg');
-        
-        fs.writeFileSync(file, content);
-        console.log(`Successfully fixed paths in: ${file}`);
-    } else {
+files.forEach(({ app, file }) => {
+    if (!fs.existsSync(file)) {
         console.warn(`File not found: ${file}`);
+        return;
     }
+    let content = fs.readFileSync(file, 'utf8');
+    // "../<app>/asserts/" -> "./asserts/", "../<app>/vite.svg" -> "./vite.svg"
+    content = content.replace(new RegExp(`\\.\\./${app}/asserts/`, 'g'), './asserts/');
+    content = content.replace(new RegExp(`\\.\\./${app}/vite\\.svg`, 'g'), './vite.svg');
+    fs.writeFileSync(file, content);
+    console.log(`Successfully fixed paths in: ${file}`);
 });

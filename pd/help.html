@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+  <meta charset="UTF-8" />
+  <link rel="icon" type="image/svg+xml" href="./vite.svg" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>分析ガイド — 応答時間パーセンタイル分布分析</title>
+  <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard-jp.min.css"
+    rel="stylesheet" crossorigin />
+  <style>
+    :root {
+      --text-primary: #1e293b;
+      --text-secondary: #64748b;
+      --border-color: #e2e8f0;
+      --primary-color: #4361ee;
+      --primary-soft: rgba(67, 97, 238, 0.08);
+      --bg-secondary: #f8fafc;
+      --danger-color: #ef4444;
+      --warn-color: #f59e0b;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: "Pretendard JP Variable", "Pretendard JP", Pretendard, system-ui, sans-serif;
+      color: var(--text-primary);
+      background: #fff;
+      font-size: 13px;
+      line-height: 1.75;
+      padding: 1.5rem 1.75rem 4rem;
+    }
+
+    h1 { font-size: 1.35rem; margin-bottom: 0.25rem; }
+    .lead { color: var(--text-secondary); margin-bottom: 1.5rem; }
+
+    section { scroll-margin-top: 1rem; margin-bottom: 2rem; }
+
+    h2 {
+      font-size: 1.05rem;
+      padding-bottom: 0.35rem;
+      margin-bottom: 0.75rem;
+      border-bottom: 2px solid var(--primary-color);
+    }
+
+    h3 { font-size: 0.95rem; margin: 1.1rem 0 0.4rem; }
+
+    p, li { margin-bottom: 0.4rem; }
+    ul, ol { padding-left: 1.3rem; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 0.6rem 0 1rem;
+    }
+
+    th, td {
+      border: 1px solid var(--border-color);
+      padding: 0.4rem 0.6rem;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th { background: var(--bg-secondary); font-weight: 600; }
+
+    code {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      padding: 0.05rem 0.3rem;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.92em;
+    }
+
+    .callout {
+      border-left: 3px solid var(--primary-color);
+      background: var(--primary-soft);
+      padding: 0.6rem 0.9rem;
+      border-radius: 0 6px 6px 0;
+      margin: 0.8rem 0;
+    }
+
+    .callout.warn { border-left-color: var(--warn-color); background: rgba(245, 158, 11, 0.08); }
+
+    nav.toc {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 0.6rem 1rem;
+      margin-bottom: 2rem;
+    }
+
+    nav.toc a { color: var(--primary-color); text-decoration: none; margin-right: 1rem; }
+    nav.toc a:hover { text-decoration: underline; }
+  </style>
+</head>
+
+<body>
+  <h1>分析ガイド</h1>
+  <p class="lead">応答時間パーセンタイル分布分析 (Percentile Distribution) の指標定義と読み方</p>
+
+  <nav class="toc">
+    <a href="#overview">システム概要</a>
+    <a href="#histogram">ヒストグラム</a>
+    <a href="#cdf">パーセンタイル曲線</a>
+    <a href="#ranking">アプリ別ランキング</a>
+    <a href="#faq">よくある質問</a>
+  </nav>
+
+  <section id="overview">
+    <h2>1. システム概要</h2>
+    <p>
+      本ツールは JENNIFER5 が収集した <strong>X-View トランザクション点データ</strong>を OpenAPI 経由で取得し、
+      応答時間の<strong>分布</strong>を可視化します。集計済みの平均値を扱う「性能トレンド分析 (PTA)」とは異なり、
+      個々のトランザクション 1 件 1 件を 1 つの点として扱います。
+    </p>
+
+    <h3>なぜ平均値では不十分なのか</h3>
+    <p>
+      平均応答時間 150ms のシステムでも、P99 が 800ms であれば
+      <strong>100 リクエストに 1 回は 5 倍以上遅い体験</strong>が発生しています。
+      平均値は分布の裾 (テール) を隠してしまうため、実際のユーザ体験を代表しません。
+      SLA / SLO は平均ではなくパーセンタイルで定義すべきです。
+    </p>
+
+    <h3>データ取得の仕組み</h3>
+    <p>
+      X-View データの取得には OpenAPI の <code>/api/transaction/time</code> を使用します。
+      この API は仕様上 <strong>1 回の照会で最大 1 分間</strong>しか取得できないため、
+      指定した期間を 1 分単位のチャンクに分割し、<strong>逐次 (同時実行数 1)</strong> で取得します。
+    </p>
+    <div class="callout warn">
+      X-View の照会は JENNIFER のデータサーバに負荷をかけます (マニュアル付録 5.9.4.5 に明記)。
+      意図的に並列化していないのはこのためです。期間はできる限り絞り込んでご利用ください。
+    </div>
+
+    <h3>対象の絞り込み</h3>
+    <table>
+      <thead>
+        <tr><th>絞り込み</th><th>実行場所</th><th>理由</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>ドメイン</td><td>API 側</td>
+          <td><code>domain_id</code> は必須パラメータ</td>
+        </tr>
+        <tr>
+          <td>インスタンス</td><td>API 側</td>
+          <td><code>instance_id</code> パラメータで指定</td>
+        </tr>
+        <tr>
+          <td>ビジネス</td><td>クライアント側</td>
+          <td>API に該当パラメータが無いため、取得済みデータの <code>businessId</code> 配列で判定</td>
+        </tr>
+        <tr>
+          <td>エラー / アプリケーション名</td><td>クライアント側</td>
+          <td>再照会せずに即時再計算されます</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="histogram">
+    <h2>2. メインヒストグラム</h2>
+    <p>
+      横軸が応答時間の区間 (ビン)、縦軸がその区間に入ったトランザクション件数です。
+      分布の「形」からシステムの性質を読み取ります。
+    </p>
+
+    <h3>分布の形の読み方</h3>
+    <table>
+      <thead>
+        <tr><th>形状</th><th>意味</th><th>次のアクション</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>左に鋭いピーク + 右にロングテール</td>
+          <td>正常な Web システムの典型。大半は速く、一部だけ遅い</td>
+          <td>テールの原因 (GC / ロック / 遅い SQL) を特定</td>
+        </tr>
+        <tr>
+          <td>山が 2 つ (二峰性 / bimodal)</td>
+          <td>2 種類の処理が混在。キャッシュヒット/ミス、正常系/異常系など</td>
+          <td>アプリケーション名で絞り込んで山を分離</td>
+        </tr>
+        <tr>
+          <td>全体的に平坦で広い</td>
+          <td>応答時間が安定していない。負荷やリソース競合の可能性</td>
+          <td>PTA で同時刻の CPU・TPS 推移を確認</td>
+        </tr>
+        <tr>
+          <td>特定の値に鋭いスパイク</td>
+          <td>タイムアウト設定値や外部連携の固定待ちが疑われる</td>
+          <td>該当区間の棒をクリックして個別トランザクションを確認</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>パーセンタイル基準線</h3>
+    <p>
+      グラフ上の垂直線は各パーセンタイルの位置を示します。
+      <strong>P99 (赤)</strong> より右側にある棒が、いわゆるテールレイテンシです。
+    </p>
+    <ul>
+      <li><strong>P50 (中央値)</strong> — 半数のユーザがこれより速い。「典型的な体験」</li>
+      <li><strong>P90</strong> — 10 リクエストに 1 回はこれより遅い</li>
+      <li><strong>P99</strong> — 100 リクエストに 1 回。1 画面が 20 リソースを読むなら、<strong>1 画面あたり約 2 割が P99 を踏む</strong>計算になります</li>
+    </ul>
+    <div class="callout">
+      平均値は分布の中に線として現れません。平均と P50 が大きく離れている場合、
+      それ自体が「一部の極端に遅いトランザクションが平均を押し上げている」証拠です。
+    </div>
+
+    <h3>オーバーフロービン (オレンジの棒)</h3>
+    <p>
+      横軸の上限は P99.5 を基準に自動決定します。極端な外れ値に軸全体を支配させないためです。
+      上限を超えたトランザクションは<strong>最終ビンに合算</strong>され、オレンジ色で表示されます。
+      この棒が目立つ場合は、テールが想定以上に長いことを意味します。
+    </p>
+
+    <h3>ビンモードと Y 軸ログ</h3>
+    <ul>
+      <li><strong>自動 (50ms間隔)</strong> — 既定。ビン幅は 50ms 固定、上限は P99.5 を 50ms の倍数へ切り上げ。X 軸の目盛りとガイド線はビン境界 (0 / 50 / 100...) に引かれます</li>
+      <li><strong>ログスケール</strong> — 1ms 〜 60s のようにレンジが 3 桁以上開く場合に使用</li>
+      <li><strong>手動</strong> — ビン幅と上限を固定。<strong>チューニング前後を比較する際は必ず手動で軸を揃えてください</strong></li>
+      <li><strong>Y 軸ログ</strong> — テール側の「件数が少ないが重要な」棒を見えるようにします</li>
+    </ul>
+  </section>
+
+  <section id="cdf">
+    <h2>3. パーセンタイル曲線 (CDF)</h2>
+    <p>
+      横軸がパーセンタイル (0〜100)、縦軸が応答時間です。
+      「上位 X% のユーザは何 ms 以内で応答を得られているか」を連続的に示します。
+    </p>
+    <ul>
+      <li><strong>なだらかな右上がり</strong> — 応答時間が安定。テールリスクは低い</li>
+      <li><strong>P99 付近で急激に立ち上がる「崖 (cliff)」</strong> — ごく一部だけが極端に遅い。
+        タイムアウト、リトライ、GC ストップザワールドなどが典型的な原因です</li>
+    </ul>
+    <p>
+      「テール拡大」をオンにすると P90 以降だけを拡大表示します。
+      崖の立ち上がり位置を特定するのに有効です。
+    </p>
+  </section>
+
+  <section id="ranking">
+    <h2>4. アプリケーション別 P99 TOP10</h2>
+    <p>
+      <code>applicationName</code> ごとにグループ化し、P99 が大きい順に 10 件表示します。
+      全体の P99 を押し上げている「犯人」を特定するための入口です。
+    </p>
+    <div class="callout">
+      棒をクリックすると、そのアプリケーションのみでヒストグラムを再描画します (ドリルダウン)。
+      <code>ESC</code> キーまたは「解除」ボタンで全件表示に戻ります。
+    </div>
+    <p>
+      なお、サンプル数が極端に少ないアプリケーションの P99 は統計的に不安定です。
+      本ランキングは <strong>5 件以上</strong>のサンプルがあるアプリケーションのみを対象としています。
+    </p>
+  </section>
+
+  <section id="faq">
+    <h2>5. よくある質問</h2>
+
+    <h3>Q. 照会に時間がかかります</h3>
+    <p>
+      1 分チャンクを逐次で取得するため、1 時間の照会は 60 回の API 呼び出しになります。
+      期間バッジに表示されるチャンク数を目安にしてください。
+      進捗バーの「中断」ボタンで、その時点までのデータを使って分析を確定できます。
+    </p>
+
+    <h3>Q. 「標本上限に到達しました」と表示されました</h3>
+    <p>
+      ブラウザのメモリを保護するため、累積 30 万件で収集を打ち切ります
+      (<code>public/pd/config.js</code> の <code>MAX_POINTS</code> で変更可能)。
+      期間を狭めるか、インスタンスで絞り込んでから再照会してください。
+    </p>
+
+    <h3>Q. 「標本不足」と表示されます</h3>
+    <p>
+      サンプル数が 1,000 件未満の場合に表示されます。
+      P99 は上位 1% の値なので、1,000 件未満では実質的に数件の観測値だけで決まってしまい、
+      統計的な信頼性が低くなります。期間を広げてから判断してください。
+    </p>
+
+    <h3>Q. 一部のチャンクが失敗しました</h3>
+    <p>
+      各チャンクは最大 2 回リトライした後、失敗した場合はスキップして続行します。
+      分布の一部が欠損している状態なので、件数の絶対値ではなく形状の傾向としてご覧ください。
+      頻発する場合は、<code>config.js</code> の <code>CHUNK_WAIT_MS</code> に 100〜500 を設定して
+      データサーバへの負荷を下げると改善することがあります。
+    </p>
+
+    <h3>Q. 指定した開始時刻より前のトランザクションが含まれています</h3>
+    <p>
+      仕様どおりの動作です。この API は<strong>当該区間に終了した</strong>トランザクションを返すため、
+      区間をまたいで実行された長時間トランザクションも取りこぼさずに捕捉されます。
+      テール分析においてはむしろ望ましい挙動です。
+    </p>
+  </section>
+</body>
+
+</html>

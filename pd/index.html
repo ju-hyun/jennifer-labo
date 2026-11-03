@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+  <meta charset="UTF-8" />
+  <link rel="icon" type="image/svg+xml" href="./vite.svg" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <script src="./config.js"></script>
+  <title>応答時間パーセンタイル分布分析</title>
+  <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard-jp.min.css"
+    rel="stylesheet" crossorigin />
+  <link rel="stylesheet" href="../src/pd/style.css">
+</head>
+
+<body>
+  <div class="app-container">
+    <main class="main-content">
+
+      <!-- ============ フィルタ ============ -->
+      <section class="filters-card">
+        <div class="filter-group domain-filter-group">
+          <label>ドメイン</label>
+          <div id="hierarchicalDomainSelector" class="hierarchical-selector">
+            <div class="breadcrumb-container" id="breadcrumbContainer">
+              <div class="breadcrumb-item loading">データロード中...</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="filter-group target-type-group">
+          <label>対象</label>
+          <div class="toggle-group">
+            <input type="radio" id="typeInstance" name="targetType" value="instance" checked>
+            <label for="typeInstance">インスタンス</label>
+            <input type="radio" id="typeBusiness" name="targetType" value="business">
+            <label for="typeBusiness">ビジネス</label>
+          </div>
+        </div>
+
+        <div class="filter-group" id="instanceFilterArea">
+          <select id="instanceSelect" class="form-select">
+            <option value="">全体インスタンス</option>
+          </select>
+        </div>
+
+        <div class="filter-group hidden" id="businessFilterArea">
+          <select id="businessSelect" class="form-select">
+            <option value="">全体ビジネス</option>
+          </select>
+        </div>
+      </section>
+
+      <section class="filters-card period-card">
+        <div class="filter-group">
+          <label>期間</label>
+          <div class="preset-group" id="presetGroup">
+            <button type="button" class="preset-btn" data-minutes="5">直近5分</button>
+            <button type="button" class="preset-btn is-active" data-minutes="15">直近15分</button>
+            <button type="button" class="preset-btn" data-minutes="30">直近30分</button>
+            <button type="button" class="preset-btn" data-minutes="60">直近1時間</button>
+          </div>
+        </div>
+
+        <div class="filter-group range-group">
+          <input type="datetime-local" id="startInput" class="form-input" step="1">
+          <span class="range-sep">〜</span>
+          <input type="datetime-local" id="endInput" class="form-input" step="1">
+        </div>
+
+        <div class="filter-group">
+          <span class="chunk-badge" id="chunkBadge" title="OpenAPI仕様(付録5.9.4.5)により1回の照会は最大1分です">
+            15 チャンク
+          </span>
+        </div>
+
+        <div class="filter-actions">
+          <button type="button" id="fetchBtn" class="btn-primary">照会</button>
+          <button type="button" id="abortBtn" class="btn-ghost hidden">中断</button>
+        </div>
+      </section>
+
+      <!-- ============ 進捗 ============ -->
+      <section class="progress-card hidden" id="progressCard">
+        <div class="progress-track">
+          <div class="progress-bar" id="progressBar"></div>
+        </div>
+        <p class="progress-text" id="progressText">データロード中...</p>
+      </section>
+
+      <div class="notice hidden" id="noticeBar"></div>
+
+      <!-- ============ サマリカード ============ -->
+      <section class="summary-grid">
+        <div class="summary-card"><span class="summary-label">サンプル数</span><strong class="summary-value" id="cardCount">-</strong><span class="summary-delta" id="cardCountDelta"></span></div>
+        <div class="summary-card"><span class="summary-label">平均</span><strong class="summary-value" id="cardMean">-</strong><span class="summary-delta" id="cardMeanDelta"></span></div>
+        <div class="summary-card"><span class="summary-label">P50</span><strong class="summary-value" id="cardP50">-</strong><span class="summary-delta" id="cardP50Delta"></span></div>
+        <div class="summary-card"><span class="summary-label">P90</span><strong class="summary-value" id="cardP90">-</strong><span class="summary-delta" id="cardP90Delta"></span></div>
+        <div class="summary-card"><span class="summary-label">P95</span><strong class="summary-value" id="cardP95">-</strong><span class="summary-delta" id="cardP95Delta"></span></div>
+        <div class="summary-card is-accent"><span class="summary-label">P99</span><strong class="summary-value" id="cardP99">-</strong><span class="summary-delta" id="cardP99Delta"></span></div>
+        <div class="summary-card"><span class="summary-label">最大</span><strong class="summary-value" id="cardMax">-</strong><span class="summary-delta" id="cardMaxDelta"></span></div>
+        <div class="summary-card"><span class="summary-label">エラー率</span><strong class="summary-value" id="cardErrRate">-</strong><span class="summary-delta" id="cardErrRateDelta"></span></div>
+      </section>
+
+      <!-- ============ 二次フィルタ ============ -->
+      <section class="subfilter-card">
+        <div class="filter-group">
+          <label for="errorModeSelect">エラー</label>
+          <select id="errorModeSelect" class="form-select compact">
+            <option value="all">全件</option>
+            <option value="normal">正常のみ</option>
+            <option value="error">エラーのみ</option>
+          </select>
+        </div>
+        <div class="filter-group grow">
+          <label for="appKeyword">アプリケーション</label>
+          <input type="search" id="appKeyword" class="form-input" placeholder="部分一致で絞り込み (例: /api/order)">
+        </div>
+        <div class="filter-group">
+          <label for="binModeSelect">ビン</label>
+          <select id="binModeSelect" class="form-select compact">
+            <option value="auto">自動 (50ms間隔)</option>
+            <option value="log">ログスケール</option>
+            <option value="manual">手動</option>
+          </select>
+        </div>
+        <div class="filter-group hidden" id="manualBinArea">
+          <input type="number" id="binWidthInput" class="form-input tiny" placeholder="幅ms (既定50)" min="1">
+          <input type="number" id="xMaxInput" class="form-input tiny" placeholder="上限ms" min="1">
+        </div>
+        <div class="filter-actions">
+          <button type="button" id="resetFilterBtn" class="btn-ghost">解除</button>
+          <button type="button" id="csvBtn" class="btn-ghost">CSV</button>
+        </div>
+      </section>
+
+      <!-- ============ メインヒストグラム ============ -->
+      <section class="chart-card" id="histogram">
+        <header class="chart-header">
+          <h2 id="histogramTitle">応答時間分布</h2>
+          <div class="chart-tools">
+            <div class="pct-toggles" id="pctToggles">
+              <label class="chip"><input type="checkbox" value="50" checked><span>P50</span></label>
+              <label class="chip"><input type="checkbox" value="75"><span>P75</span></label>
+              <label class="chip"><input type="checkbox" value="90" checked><span>P90</span></label>
+              <label class="chip"><input type="checkbox" value="95"><span>P95</span></label>
+              <label class="chip"><input type="checkbox" value="99" checked><span>P99</span></label>
+              <label class="chip"><input type="checkbox" value="99.9"><span>P99.9</span></label>
+            </div>
+            <label class="chip"><input type="checkbox" id="logYToggle"><span>Y軸ログ</span></label>
+            <label class="chip" id="compareChip" title="前回の照会結果と重ねて比較します"><input type="checkbox" id="compareToggle" disabled><span>前回と比較</span></label>
+            <button type="button" class="help-btn-small" data-help="histogram" aria-label="ヘルプ">?</button>
+          </div>
+        </header>
+        <div class="chart-body tall">
+          <canvas id="histogramCanvas"></canvas>
+        </div>
+        <p class="chart-hint">棒をクリックすると、その区間のトランザクション一覧が左からスライド表示されます。</p>
+      </section>
+
+      <!-- ============ CDF / ランキング ============ -->
+      <div class="dual-grid">
+        <section class="chart-card" id="cdf">
+          <header class="chart-header">
+            <h2>パーセンタイル曲線 (CDF)</h2>
+            <div class="chart-tools">
+              <label class="chip"><input type="checkbox" id="tailZoomToggle"><span>テール拡大 (P90〜)</span></label>
+              <button type="button" class="help-btn-small" data-help="cdf" aria-label="ヘルプ">?</button>
+            </div>
+          </header>
+          <div class="chart-body">
+            <canvas id="cdfCanvas"></canvas>
+          </div>
+        </section>
+
+        <section class="chart-card" id="ranking">
+          <header class="chart-header">
+            <h2>アプリケーション別 P99 TOP10</h2>
+            <div class="chart-tools">
+              <button type="button" class="help-btn-small" data-help="ranking" aria-label="ヘルプ">?</button>
+            </div>
+          </header>
+          <div class="chart-body">
+            <canvas id="rankingCanvas"></canvas>
+          </div>
+          <p class="chart-hint">棒をクリックすると、そのアプリケーションのみに絞り込みます。</p>
+        </section>
+      </div>
+
+    </main>
+  </div>
+
+  <script type="module" src="../src/pd/main.js"></script>
+</body>
+
+</html>

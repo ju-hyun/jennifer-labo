@@ -8,11 +8,11 @@ export default defineConfig(({ mode }) => {
         base: './', // 빌드 시 상대 경로 사용
         server: {
             host: '0.0.0.0',
-            port: 5177,
+            port: 5177, // 통합 앱 단일 포트
             strictPort: true,
             proxy: {
                 '/api': {
-                    target: 'https://13.158.36.15:8443/',
+                    target: 'https://demo.jennifersoft.co.jp/',
                     changeOrigin: true,
                     secure: false,
                     configure: (proxy) => {
@@ -37,17 +37,24 @@ export default defineConfig(({ mode }) => {
             }
         },
         build: {
-            assetsDir: 'pta/asserts',
+            assetsDir: 'asserts',
             rollupOptions: {
                 input: {
                     main: 'index.html',
                     pta: 'pta/index.html',
-                    help: 'pta/help.html'
+                    'pta-help': 'pta/help.html',
+                    pd: 'pd/index.html',
+                    'pd-help': 'pd/help.html'
                 },
                 output: {
-                    entryFileNames: 'pta/asserts/[name]-[hash].js',
-                    chunkFileNames: 'pta/asserts/[name]-[hash].js',
-                    assetFileNames: 'pta/asserts/[name]-[hash].[ext]'
+                    // 앱별로 asserts 폴더를 분리: pta/asserts, pd/asserts
+                    entryFileNames: (chunk) => `${chunk.name.startsWith('pd') ? 'pd' : 'pta'}/asserts/[name]-[hash].js`,
+                    chunkFileNames: 'shared/asserts/[name]-[hash].js',
+                    assetFileNames: (asset) => {
+                        const n = asset.name || '';
+                        const app = n.startsWith('pd') ? 'pd' : n.startsWith('pta') ? 'pta' : 'shared';
+                        return `${app}/asserts/[name]-[hash].[ext]`;
+                    }
                 }
             }
         }
