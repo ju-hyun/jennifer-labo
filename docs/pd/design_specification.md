@@ -286,9 +286,16 @@ jennifer-labo/                      # PTA・PD 統合 Vite マルチページア
 │   ├── index.html              # PD ダッシュボード (メインアプリ)
 │   └── help.html               # 分析ガイド (ポップアップヘルプ)
 ├── src/
-│   ├── pta/                    # PTA ソース (main.js, style.css)
+│   ├── pta/                    # PTA ソース (main + 役割別モジュール, lib/ 純粋関数, style.css)
+│   ├── shared/                 # PTA・PD 共通 (http, domain-tree, html, percentile)
 │   └── pd/
-│       ├── main.js             # エントリ / 状態管理 / イベント束ね
+│       ├── main.js             # エントリ (初期化のみ)
+│       ├── config.js / state.js / dom.js / notice.js   # 設定・共有状態・DOM 参照・通知バー
+│       ├── range.js            # 照会期間 (開始/終了・プリセット)
+│       ├── targets.js          # ドメイン階層セレクタ・インスタンス/ビジネス一覧
+│       ├── collect.js          # X-View 収集 (照会ボタン) と失敗時の扱い
+│       ├── view.js             # 絞り込み・再計算とサマリ/チャート/詳細パネルの描画
+│       ├── events.js / csv.js / help.js   # イベントの束ね・CSV 出力・ヘルプ
 │       ├── api.js              # OpenAPI 呼び出し・1分チャンク逐次収集
 │       ├── stats.js            # パーセンタイル・ヒストグラムビン・要約統計
 │       ├── chart.js            # Chart.js 構成 + パーセンタイル オーバーレイ
@@ -308,8 +315,9 @@ jennifer-labo/                      # PTA・PD 統合 Vite マルチページア
 └── package.json
 ```
 
-> PTA は `src/pta/main.js` 単一ファイル 2,445 行構成です。本システムは当初から
-> **役割別モジュール**に分割し保守性を確保します (Vite がバンドルするため配布形態は同一)。
+> PTA も `src/pta/` 配下で役割別モジュール (state / api / targets / data / chart / selection / heatmaps ほか)
+> に分割され、DOM に依存しない計算は `src/pta/lib/` に分離されています。PTA・PD で共通の処理は
+> `src/shared/` を共有します (Vite がバンドルするため配布形態は同一)。
 
 ---
 

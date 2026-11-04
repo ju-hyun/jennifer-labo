@@ -9,6 +9,7 @@
  */
 
 import { parseApiTime } from './api.js';
+import { percentile } from '../shared/percentile.js';
 
 const INITIAL_CAPACITY = 65536;
 
@@ -214,17 +215,8 @@ export function sortedResponseTimes(store, indices) {
 /* パーセンタイル・要約統計                                            */
 /* ------------------------------------------------------------------ */
 
-/** 線形補間方式のパーセンタイル。sorted は昇順ソート済みであること */
-export function percentile(sorted, p) {
-  const n = sorted.length;
-  if (n === 0) return NaN;
-  if (n === 1) return sorted[0];
-  const idx = ((n - 1) * p) / 100;
-  const lo = Math.floor(idx);
-  const hi = Math.ceil(idx);
-  if (lo === hi) return sorted[lo];
-  return sorted[lo] + (sorted[hi] - sorted[lo]) * (idx - lo);
-}
+// 線形補間方式のパーセンタイルは PTA と共通の実装を使う
+export { percentile };
 
 export const PERCENTILE_LEVELS = [50, 75, 90, 95, 99, 99.9];
 

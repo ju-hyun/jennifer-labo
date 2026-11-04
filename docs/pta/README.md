@@ -25,8 +25,26 @@ jennifer-labo/                # PTA·PD 통합 Vite 멀티페이지 앱 (패키�
 ├── pd/                       # PD 페이지 (docs/pd/ 참고)
 ├── src/
 │   ├── pta/
-│   │   ├── main.js           # 핵심 로직 (API, 차트, 히트맵, 인터랙션) — window.PTA_CONFIG를 직접 참조
+│   │   ├── main.js           # 진입점 (초기화·이벤트 바인딩만 담당)
+│   │   ├── config.js         # window.PTA_CONFIG 참조, API 베이스 URL, MOCK_ALLOWED
+│   │   ├── state.js          # 화면 전체가 공유하는 상태 (선택 범위, 1년치 데이터, 임계값 등)
+│   │   ├── dom.js            # 공통 DOM 요소 참조
+│   │   ├── notice.js         # 알림 바, 설정/인증 오류 오버레이
+│   │   ├── api.js            # dbmetrics API 호출 (fetchMetricData)
+│   │   ├── targets.js        # 도메인/인스턴스/비즈니스 선택 (브레드크럼 + 목록 조회)
+│   │   ├── data.js           # 1년치 일별 데이터 로드 (loadData)
+│   │   ├── chart.js          # 메인 차트, 월 경계/범위 선택 플러그인, 월별 통계 영역
+│   │   ├── selection.js      # 기간 선택(클릭/드래그/키보드)과 재조회
+│   │   ├── heatmaps.js       # 요일×시간 / Overall(육각형) 히트맵, 상세 슬라이드 레이어
+│   │   ├── summary.js        # 요약 카드
+│   │   ├── mock.js           # 개발 전용 모크 데이터
+│   │   ├── help.js           # 도움말 팝업
+│   │   ├── lib/              # DOM·전역 상태에 의존하지 않는 순수 계산 (단위 테스트 대상)
+│   │   │   ├── format.js         #   날짜/단위 포맷
+│   │   │   ├── series.js         #   시계열 병합, 에러율, 이동평균, 월별 평균·전월 대비, 기간 요약
+│   │   │   └── heatmap-data.js   #   요일×시간 집계, IQR 임계값, 히트맵용 데이터 결합
 │   │   └── style.css         # 전체 스타일시트
+│   ├── shared/               # PTA·PD 공통 (http, domain-tree, html, percentile)
 │   └── pd/                   # PD 소스
 ├── public/pta/
 │   ├── config.js             # 런타임 설정 파일 (API_DOMAIN — 빌드 후에도 수정 가능)

@@ -12,6 +12,11 @@
  * サーバ側で token クエリが注入される。
  */
 
+import { ApiError, getJson } from '../shared/http.js';
+
+// 既存の import 元 (main.js 等) を変えずに済むよう再エクスポートする
+export { ApiError };
+
 const PD_CFG = window.PD_CONFIG || {};
 const API_ROOT = PD_CFG.API_DOMAIN || '';
 
@@ -25,14 +30,6 @@ export const CHUNK_MS = 60 * 1000;
 
 /** time_pattern は常に明示送信する (§3.2.1 C7 — 既定値が原文で矛盾しているため) */
 export const TIME_PATTERN = 'yyyyMMddHHmmss';
-
-export class ApiError extends Error {
-  constructor(message, status) {
-    super(message);
-    this.name = 'ApiError';
-    this.status = status;
-  }
-}
 
 /** Date -> "yyyyMMddHHmmss" (ローカルタイム) */
 export function formatApiTime(date) {
@@ -59,21 +56,6 @@ export function parseApiTime(value) {
     Number(m[1]), Number(m[2]) - 1, Number(m[3]),
     Number(m[4]), Number(m[5]), Number(m[6] || 0), Number(m[7] || 0)
   );
-}
-
-async function getJson(url, { signal } = {}) {
-  const res = await fetch(url.toString(), {
-    method: 'GET',
-    headers: { Accept: 'application/json' },
-    signal
-  });
-  if (res.status === 401) {
-    throw new ApiError('Authentication failed (401)', 401);
-  }
-  if (!res.ok) {
-    throw new ApiError(`HTTP Error: ${res.status}`, res.status);
-  }
-  return res.json();
 }
 
 function apiUrl(base, params = {}) {
