@@ -2,6 +2,7 @@
  * 1 年分の日次データの取得と、メインチャート・サマリ・ヒートマップの更新
  */
 import { formatDateParam } from './lib/format.js';
+import { startOfMonth } from '../shared/tz.js';
 import { mergeSeries, computeErrRate } from './lib/series.js';
 import { MOCK_ALLOWED } from './config.js';
 import { getCurrentDomainId, state } from './state.js';
@@ -62,9 +63,10 @@ export async function loadData() {
     let failedRequests = 0;
 
     for (let i = 11; i >= 0; i--) {
-      const monthStart = new Date(today.getFullYear(), today.getMonth() - i, 1);
+      // 月の境界はサーバ時間帯の暦で決める (ブラウザと時間帯が違うと「今月」が異なるため)
+      const monthStart = startOfMonth(today, -i);
       // API end_time is exclusive, so use the 1st day of the next month instead of the 0th day (last day of current month)
-      const monthEnd = new Date(today.getFullYear(), today.getMonth() - i + 1, 1);
+      const monthEnd = startOfMonth(today, -i + 1);
 
       metricsToFetch.forEach(m => {
         totalRequests++;

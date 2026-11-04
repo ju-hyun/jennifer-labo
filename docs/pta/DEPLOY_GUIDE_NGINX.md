@@ -14,7 +14,8 @@ PTA 접속 경로는 `/pta/` 입니다. PD 관련 내용은 [PD 배포 가이드
 
 ```javascript
 window.PTA_CONFIG = {
-  API_DOMAIN: '' // Nginx 프록시 사용 시 비워둠
+  API_DOMAIN: '',        // Nginx 프록시 사용 시 비워둠
+  TIMEZONE: 'Asia/Tokyo' // JENNIFER 서버의 시간대. 월 경계와 '오늘' 판정을 서버 기준으로 만든다
 };
 ```
 

@@ -2,8 +2,16 @@
  * PTA の実行時設定 (window.PTA_CONFIG) と API のベース URL
  */
 
+import { setTimeZone } from '../shared/tz.js';
+
 // Runtime configuration (pta/config.js에서 window.PTA_CONFIG로 로드)
 const PTA_CFG = window.PTA_CONFIG || {};
+
+/**
+ * サーバの時間帯 (IANA 名)。指定すると、取得期間 (月の境界・「今日」の判定) をその時間帯の壁時計で組み立てる。
+ * 未指定/不正ならブラウザのローカル時刻 (従来の動作)。
+ */
+export const TIMEZONE = setTimeZone(PTA_CFG.TIMEZONE);
 
 /**
  * 接続失敗時にダミー(モック)データを表示してよいか。

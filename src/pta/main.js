@@ -2,6 +2,7 @@
  * Performance Trend Analysis (PTA) のエントリポイント。
  * 初期化とイベントの束ねのみを担当し、処理は各モジュールに委譲する。
  */
+import './config.js'; // TIMEZONE の設定を、他のモジュールが時刻を扱う前に反映する
 import { parseDateString } from './lib/format.js';
 import { getCurrentDomainId, state } from './state.js';
 import { btnHeapUsage, btnSysCpu, businessFilterArea, businessSelect, instanceFilterArea, instanceSelect, typeRadios } from './dom.js';

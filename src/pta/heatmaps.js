@@ -6,9 +6,10 @@ import { scaleLinear, scaleSequential } from 'd3-scale';
 import { max, min } from 'd3-array';
 import { hexbin } from 'd3-hexbin';
 import { formatDateParam, getMetricUnit } from './lib/format.js';
-import { flattenSorted } from './lib/series.js';
-import { combineHeatmapData, buildDayHourMap, dayHourAverages, computeIqrThresholds, computeOverallStats } from './lib/heatmap-data.js';
+import { flattenSorted, isHitWeighted } from './lib/series.js';
+import { combineHeatmapData, buildDayHourMap, dayHourAverages, cellAverage, computeIqrThresholds, computeOverallStats } from './lib/heatmap-data.js';
 import { escapeHtml } from '../shared/html.js';
+import { addDays } from '../shared/tz.js';
 import { state } from './state.js';
 import { fetchMetricData } from './api.js';
 
@@ -21,8 +22,8 @@ let heatmapSeq = 0;
 export async function reloadHeatmaps(domainId, targetId, targetType, startDate, endDate) {
   const seq = ++heatmapSeq;
   try {
-    const fetchEndDate = new Date(endDate);
-    fetchEndDate.setDate(fetchEndDate.getDate() + 1);
+    // 日付の加算はサーバ時間帯の暦で行う (夏時間をまたいでも日の境界がずれない)
+    const fetchEndDate = addDays(endDate, 1);
 
     const timePromises = [];
     const countPromises = [];
@@ -30,8 +31,7 @@ export async function reloadHeatmaps(domainId, targetId, targetType, startDate, 
 
     let currentStart = new Date(startDate);
     while (currentStart < fetchEndDate) {
-      let currentEnd = new Date(currentStart);
-      currentEnd.setDate(currentEnd.getDate() + 30); // 30-day chunks to bypass 31-day API limit
+      let currentEnd = addDays(currentStart, 30); // 30-day chunks to bypass 31-day API limit
       if (currentEnd > fetchEndDate) {
         currentEnd = new Date(fetchEndDate);
       }
@@ -97,7 +97,9 @@ export function renderDayHourHeatmap(data, isHitSelected, metric) {
   const dayHourMap = buildDayHourMap(data);
 
   // 各セルの平均値 (しきい値の算出に使う)
-  const allAverages = dayHourAverages(dayHourMap);
+  // 応答時間・エラー率はリクエスト数で加重した平均にする (セル内の観測ごとに件数が大きく異なるため)
+  const weighted = isHitWeighted(metric);
+  const allAverages = dayHourAverages(dayHourMap, weighted);
 
   // Calculate dynamic thresholds if not already stored for the current metric
   let goodThreshold, warningThreshold;
@@ -150,7 +152,7 @@ export function renderDayHourHeatmap(data, isHitSelected, metric) {
     html += `<tr><td class="cell-label">${day}</td>`;
     hours.forEach((h) => {
       const cell = dayHourMap[dIdx][parseInt(h)];
-      const avg = cell.count > 0 ? cell.sum / cell.count : 0;
+      const avg = cellAverage(cell, weighted);
 
       // Interpolate colors based on value
       // 0: Light background, Low: Green, Mid: Yellow, High: Red

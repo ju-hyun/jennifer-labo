@@ -2,7 +2,18 @@
  * PD の実行時設定 (window.PD_CONFIG) と、そこから導く定数
  */
 
+import { setTimeZone, timeZoneLabel } from '../shared/tz.js';
+
 const PD_CFG = window.PD_CONFIG || {};
+
+/**
+ * サーバの時間帯 (IANA 名)。指定すると、照会期間の組み立てと表示をその時間帯の壁時計で行う。
+ * 未指定/不正ならブラウザのローカル時刻 (従来の動作)。
+ */
+export const TIMEZONE = setTimeZone(PD_CFG.TIMEZONE);
+
+/** 画面に表示する時間帯の短い名前 (例: 'JST')。ローカル時刻の場合は null */
+export const TIMEZONE_LABEL = timeZoneLabel(TIMEZONE);
 
 /**
  * 接続失敗時にダミー(モック)データを表示してよいか。

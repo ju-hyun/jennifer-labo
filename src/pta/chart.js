@@ -3,7 +3,7 @@
  */
 import Chart from 'chart.js/auto';
 import { toYMD, getMetricUnit, parseDateString } from './lib/format.js';
-import { calculateSMA, computeMonthlyAverages } from './lib/series.js';
+import { calculateSMA, computeMonthlyAverages, isHitWeighted, weightMap } from './lib/series.js';
 import { state } from './state.js';
 import { handleChartSelectionChanged } from './selection.js';
 
@@ -451,7 +451,9 @@ let currentMetricLabelCache = '';
 function calculateMonthlyAverages(data, label) {
   currentMetricLabelCache = label;
   monthlyAveragesVersion++;
-  monthlyAveragesCache = computeMonthlyAverages(data, { metric: state.currentMetric, todayStr: toYMD(new Date()) });
+  // 応答時間・エラー率の月平均は、その日のリクエスト数で加重する (閑散日と繁忙日を同じ重みにしない)
+  const weights = isHitWeighted(state.currentMetric) ? weightMap(state.yearlyData.service_count) : null;
+  monthlyAveragesCache = computeMonthlyAverages(data, { metric: state.currentMetric, todayStr: toYMD(new Date()), weights });
 }
 
 // 統計グリッドの再描画をスキップするための署名と、月別平均の更新世代

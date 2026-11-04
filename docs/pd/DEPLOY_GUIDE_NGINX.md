@@ -15,6 +15,7 @@ PD 접속 경로는 `/pd/` 입니다. PTA 관련 내용은 [PTA 배포 가이드
 ```javascript
 window.PD_CONFIG = {
   API_DOMAIN: '',      // Nginx 프록시 사용 시 비워둠
+  TIMEZONE: 'Asia/Tokyo', // JENNIFER 서버의 시간대. 조회 기간을 서버 기준 시각으로 만든다
 
   CHUNK_WAIT_MS: 0,    // 1분 청크 간 웨이트(ms). 데이터서버 부하가 우려되면 100~500 권장
   MAX_POINTS: 300000,  // 누적 트랜잭션 건수의 안전 상한

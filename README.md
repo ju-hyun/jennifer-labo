@@ -75,11 +75,12 @@ npm install
 
 ```javascript
 // public/pta/config.js
-window.PTA_CONFIG = { API_DOMAIN: '' };
+window.PTA_CONFIG = { API_DOMAIN: '', TIMEZONE: 'Asia/Tokyo' };
 
 // public/pd/config.js
 window.PD_CONFIG = {
   API_DOMAIN: '',
+  TIMEZONE: 'Asia/Tokyo',  // JENNIFER 서버의 시간대. 조회 기간을 서버 기준 시각으로 만든다
   CHUNK_WAIT_MS: 0,     // 1분 청크 간 웨이트(ms). 데이터서버 부하가 우려되면 100~500 권장
   MAX_POINTS: 300000,   // 누적 트랜잭션 건수의 안전 상한
   CONFIRM_CHUNKS: 120   // 이 횟수(=분)를 넘는 조회는 실행 전에 확인창을 표시
@@ -89,6 +90,7 @@ window.PD_CONFIG = {
 | 변수명 | 대상 | 설명 |
 |---|---|---|
 | `API_DOMAIN` | PTA, PD | 프록시 없이 API 서버에 직접 요청할 때 사용 (Nginx 배포 시 비워둠) |
+| `TIMEZONE` | PTA, PD | JENNIFER 서버의 시간대(IANA 이름, 배포 기본값 `Asia/Tokyo`). 조회 기간(PTA의 월 경계, PD의 입력 시각)을 서버의 시각 기준으로 만듭니다. 브라우저와 시간대가 달라도 서버 기준으로 조회됩니다. 비우거나 항목을 지우면 브라우저의 로컬 시각을 씁니다(이전 동작) |
 | `CHUNK_WAIT_MS` | PD | 트랜잭션 수집 시 1분 청크 간 대기 시간 |
 | `MAX_POINTS` | PD | 누적 트랜잭션 건수 상한 |
 | `CONFIRM_CHUNKS` | PD | 조회가 이 횟수(1분 = 1회)를 넘으면 실행 전에 확인창 표시 (기본 120) |
