@@ -2,6 +2,7 @@
  * メインチャートの期間選択 (クリック/ドラッグ/キーボード) と、選択に応じた再描画
  */
 import { formatYMDLocal, parseDateString } from './lib/format.js';
+import { wallToDate } from '../shared/tz.js';
 import { escapeHtml } from '../shared/html.js';
 import { getCurrentDomainId, state } from './state.js';
 import { businessSelect, instanceSelect } from './dom.js';
@@ -48,8 +49,8 @@ export async function handleChartSelectionChanged() {
       const eMonth = parseInt(endStr.substring(4, 6), 10) - 1;
       const eDay = parseInt(endStr.substring(6, 8), 10);
 
-      const exactStartDate = new Date(sYear, sMonth, sDay);
-      const exactEndDate = new Date(eYear, eMonth, eDay);
+      const exactStartDate = wallToDate({ y: sYear, m: sMonth + 1, d: sDay });
+      const exactEndDate = wallToDate({ y: eYear, m: eMonth + 1, d: eDay });
 
       await reloadHeatmaps(domainId, targetId, targetType, exactStartDate, exactEndDate);
     }
@@ -107,8 +108,8 @@ export async function handleChartSelectionChanged() {
     const eMonth = parseInt(endStr.substring(4, 6), 10) - 1;
     const eDay = parseInt(endStr.substring(6, 8), 10);
 
-    const exactStartDate = new Date(sYear, sMonth, sDay);
-    const exactEndDate = new Date(eYear, eMonth, eDay);
+    const exactStartDate = wallToDate({ y: sYear, m: sMonth + 1, d: sDay });
+    const exactEndDate = wallToDate({ y: eYear, m: eMonth + 1, d: eDay });
 
     await reloadHeatmaps(domainId, targetId, targetType, exactStartDate, exactEndDate);
   }

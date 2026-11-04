@@ -1,21 +1,18 @@
 /**
  * PTA の純粋なフォーマット関数 (DOM・グローバル状態に依存しない)
  */
+import { formatYMDH, formatYMD } from '../../shared/tz.js';
 
-/** API の time_pattern=yyyyMMddHH 用 (ローカル時刻) */
+/**
+ * API の time_pattern=yyyyMMddHH 用。サーバ時間帯 (TIMEZONE) の壁時計で表す。未設定ならブラウザのローカル時刻。
+ */
 export function formatDateParam(date) {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
-  const h = String(date.getHours()).padStart(2, '0');
-  return `${y}${m}${d}${h}`;
+  return formatYMDH(date);
 }
 
-/** Date -> "yyyyMMdd" (ローカル時刻)。API の time 文字列との文字列比較に使う */
+/** Date -> "yyyyMMdd" (サーバ時間帯)。API の time 文字列との文字列比較に使う */
 export function toYMD(date) {
-  return date.getFullYear() +
-    String(date.getMonth() + 1).padStart(2, '0') +
-    String(date.getDate()).padStart(2, '0');
+  return formatYMD(date);
 }
 
 export function getMetricUnit(metric) {

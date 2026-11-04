@@ -46,7 +46,7 @@ export function combineHeatmapData(timeData, countData, errCountData, metric) {
  */
 export function buildDayHourMap(data) {
   const dayHourMap = Array.from({ length: 7 }, () =>
-    Array.from({ length: 24 }, () => ({ sum: 0, count: 0, data: [] }))
+    Array.from({ length: 24 }, () => ({ sum: 0, count: 0, weightedSum: 0, weightSum: 0, data: [] }))
   );
 
   const groupedByDate = {};
@@ -66,8 +66,12 @@ export function buildDayHourMap(data) {
       const hh = parseInt(String(item.time).substring(8, 10), 10);
       const hour = Number.isInteger(hh) && hh >= 0 && hh < 24 ? hh : posInDay % 24;
       if (item.count > 0) {
-        dayHourMap[dayIdx][hour].sum += item.value;
-        dayHourMap[dayIdx][hour].count++;
+        const cell = dayHourMap[dayIdx][hour];
+        cell.sum += item.value;
+        cell.count++;
+        // 加重平均用: その時間のリクエスト数 (item.count) を重みにする
+        cell.weightedSum += item.value * item.count;
+        cell.weightSum += item.count;
         dayHourMap[dayIdx][hour].data.push(item);
       }
     });
@@ -76,12 +80,21 @@ export function buildDayHourMap(data) {
   return dayHourMap;
 }
 
+/**
+ * セルの平均値。weighted=true ならリクエスト数で加重 (応答時間・エラー率など、件数で重みを付けるべき指標用)。
+ * 重みの合計が 0 の場合は単純平均に戻る。データのないセルは 0。
+ */
+export function cellAverage(cell, weighted = false) {
+  if (cell.count === 0) return 0;
+  return weighted && cell.weightSum > 0 ? cell.weightedSum / cell.weightSum : cell.sum / cell.count;
+}
+
 /** 集計済みマップから、データのあるセルの平均値だけを一次元配列にする */
-export function dayHourAverages(dayHourMap) {
+export function dayHourAverages(dayHourMap, weighted = false) {
   const averages = [];
   dayHourMap.forEach((day) => {
     day.forEach((cell) => {
-      if (cell.count > 0) averages.push(cell.sum / cell.count);
+      if (cell.count > 0) averages.push(cellAverage(cell, weighted));
     });
   });
   return averages;

@@ -16,6 +16,7 @@ export const el = {
   startInput: $('startInput'),
   endInput: $('endInput'),
   chunkBadge: $('chunkBadge'),
+  tzLabel: $('tzLabel'),
   fetchBtn: $('fetchBtn'),
   abortBtn: $('abortBtn'),
   progressCard: $('progressCard'),

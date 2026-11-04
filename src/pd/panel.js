@@ -8,6 +8,7 @@
 
 import { fmtInt } from './chart.js';
 import { escapeHtml } from '../shared/html.js';
+import { partsOf } from '../shared/tz.js';
 
 let overlayEl = null;
 let panelEl = null;
@@ -31,9 +32,10 @@ function ensureElements() {
 
 function formatTime(ms) {
   if (!Number.isFinite(ms)) return '-';
-  const d = new Date(ms);
+  // サーバ時間帯 (TIMEZONE) の壁時計で表示する。未設定ならブラウザのローカル時刻
+  const d = partsOf(ms);
   const p = (n) => String(n).padStart(2, '0');
-  return `${p(d.getMonth() + 1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+  return `${p(d.m)}/${p(d.d)} ${p(d.h)}:${p(d.mi)}:${p(d.s)}`;
 }
 
 /**

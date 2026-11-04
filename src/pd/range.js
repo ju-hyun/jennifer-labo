@@ -3,21 +3,27 @@
  */
 import { buildChunks } from './api.js';
 import { el } from './dom.js';
+import { partsOf, formatInputValue, parseInputValue } from '../shared/tz.js';
 
+// 入力欄の値は「サーバ時間帯 (TIMEZONE) の壁時計」。未設定ならブラウザのローカル時刻。
+
+/** 時刻 -> 入力欄の値 (yyyy-MM-ddTHH:mm:ss) */
 export function toLocalInput(date) {
-  const p = (n) => String(n).padStart(2, '0');
-  return `${date.getFullYear()}-${p(date.getMonth() + 1)}-${p(date.getDate())}T${p(date.getHours())}:${p(date.getMinutes())}:${p(date.getSeconds())}`;
+  return formatInputValue(date);
 }
 
 export function rangeLabel(range) {
   const p = (n) => String(n).padStart(2, '0');
-  const t = (d) => `${p(d.getHours())}:${p(d.getMinutes())}`;
+  const t = (d) => {
+    const x = partsOf(d);
+    return `${p(x.h)}:${p(x.mi)}`;
+  };
   return `${t(range.start)}–${t(range.end)}`;
 }
 
 export function readRange() {
-  const start = el.startInput.value ? new Date(el.startInput.value) : null;
-  const end = el.endInput.value ? new Date(el.endInput.value) : null;
+  const start = parseInputValue(el.startInput.value);
+  const end = parseInputValue(el.endInput.value);
   if (!start || !end || Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
   if (end <= start) return null;
   return { start, end };
@@ -48,7 +54,3 @@ export function updateChunkBadge() {
       ? `OpenAPI仕様(付録5.9.4.5)により1回の照会は最大1分です。${count} 回の逐次照会になります。`
       : 'OpenAPI仕様(付録5.9.4.5)により1回の照会は最大1分です。';
 }
-
-/* ------------------------------------------------------------------ */
-/* ドメイン階層セレクタ (ツリー構築は PTA と共通: shared/domain-tree.js)                                  */
-/* ------------------------------------------------------------------ */

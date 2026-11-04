@@ -13,6 +13,7 @@
  */
 
 import { ApiError, getJson } from '../shared/http.js';
+import { formatYMDHMS, wallToDate } from '../shared/tz.js';
 
 // 既存の import 元 (main.js 等) を変えずに済むよう再エクスポートする
 export { ApiError };
@@ -31,20 +32,12 @@ export const CHUNK_MS = 60 * 1000;
 /** time_pattern は常に明示送信する (§3.2.1 C7 — 既定値が原文で矛盾しているため) */
 export const TIME_PATTERN = 'yyyyMMddHHmmss';
 
-/** Date -> "yyyyMMddHHmmss" (ローカルタイム) */
+/** Date -> "yyyyMMddHHmmss" (サーバ時間帯 TIMEZONE の壁時計。未設定ならブラウザのローカル時刻) */
 export function formatApiTime(date) {
-  const p = (n, w = 2) => String(n).padStart(w, '0');
-  return (
-    date.getFullYear() +
-    p(date.getMonth() + 1) +
-    p(date.getDate()) +
-    p(date.getHours()) +
-    p(date.getMinutes()) +
-    p(date.getSeconds())
-  );
+  return formatYMDHMS(date);
 }
 
-/** "yyyyMMddHHmmss" / "yyyyMMddHHmm" / unix ms 文字列 -> Date (パース失敗時は null) */
+/** "yyyyMMddHHmmss" / "yyyyMMddHHmm" / unix ms 文字列 -> Date (パース失敗時は null)。文字列はサーバ時間帯の壁時計として解釈する */
 export function parseApiTime(value) {
   if (value === null || value === undefined) return null;
   const s = String(value);
@@ -52,10 +45,11 @@ export function parseApiTime(value) {
   if (/^\d{13}$/.test(s)) return new Date(Number(s));
   const m = s.match(/^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})?(\d{3})?$/);
   if (!m) return null;
-  return new Date(
-    Number(m[1]), Number(m[2]) - 1, Number(m[3]),
-    Number(m[4]), Number(m[5]), Number(m[6] || 0), Number(m[7] || 0)
-  );
+  // API が返す時刻文字列はサーバ時間帯の壁時計
+  return wallToDate({
+    y: Number(m[1]), m: Number(m[2]), d: Number(m[3]),
+    h: Number(m[4]), mi: Number(m[5]), s: Number(m[6] || 0), ms: Number(m[7] || 0)
+  });
 }
 
 function apiUrl(base, params = {}) {

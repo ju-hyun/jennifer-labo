@@ -2,7 +2,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  combineHeatmapData, buildDayHourMap, dayHourAverages,
+  combineHeatmapData, buildDayHourMap, dayHourAverages, cellAverage,
   computeIqrThresholds, median, computeOverallStats
 } from '../src/pta/lib/heatmap-data.js';
 
@@ -68,6 +68,26 @@ describe('buildDayHourMap', () => {
     const map = buildDayHourMap([{ time: '20261103', value: 1, count: 1 }, { time: '20261103', value: 2, count: 1 }]);
     assert.equal(map[2][0].count, 1);
     assert.equal(map[2][1].count, 1);
+  });
+
+  test('cellAverage: weighted=true ならリクエスト数で加重、既定は単純平均', () => {
+    // 同じ曜日×時間の 2 回の観測: 応答時間 100ms (1 件) と 300ms (3 件)
+    const map = buildDayHourMap([
+      { time: '2026110310', value: 100, count: 1 },
+      { time: '2026111010', value: 300, count: 3 }
+    ]);
+    assert.equal(cellAverage(map[2][10]), 200);
+    assert.equal(cellAverage(map[2][10], true), 250);
+    assert.equal(cellAverage(map[2][11], true), 0); // データなし
+  });
+
+  test('dayHourAverages: weighted を渡すと加重した平均の配列になる', () => {
+    const map = buildDayHourMap([
+      { time: '2026110310', value: 100, count: 1 },
+      { time: '2026111010', value: 300, count: 3 }
+    ]);
+    assert.deepEqual(dayHourAverages(map), [200]);
+    assert.deepEqual(dayHourAverages(map, true), [250]);
   });
 
   test('dayHourAverages は有効セルの平均だけを返す', () => {
