@@ -124,6 +124,34 @@ export async function fetchTransactionChunk({ domainId, instanceIds, start, end,
   return data.result || [];
 }
 
+/**
+ * 隣り合うチャンクは境界の時刻を共有する (チャンク i の end_time = チャンク i+1 の start_time)。
+ * API が境界時刻を両側で含む場合、境界上で終了したトランザクションが 2 回返されるため、
+ * 直前のチャンクに既に含まれている txid の行を除く。txid はトランザクションごとに一意なので、
+ * 境界が「含む」「含まない」のどちらの仕様でも結果は正しい。txid が無い行は判定できないので残す。
+ *
+ * @param {object[]} rows 今回のチャンクの行
+ * @param {Set<string>} prevIds 直前のチャンクの txid 集合
+ * @returns {{unique: object[], ids: Set<string>, duplicates: number}} ids は次のチャンクとの比較用
+ */
+export function dropBoundaryDuplicates(rows, prevIds) {
+  const ids = new Set();
+  const unique = [];
+  let duplicates = 0;
+  for (const row of rows) {
+    const id = row?.txid;
+    if (id !== undefined && id !== null && id !== '') {
+      ids.add(id);
+      if (prevIds.has(id)) {
+        duplicates++;
+        continue;
+      }
+    }
+    unique.push(row);
+  }
+  return { unique, ids, duplicates };
+}
+
 const sleep = (ms, signal) =>
   new Promise((resolve, reject) => {
     if (ms <= 0) return resolve();
@@ -152,7 +180,7 @@ const isAbort = (e) => e && (e.name === 'AbortError' || e.name === 'ApiAbort');
  * @param {number}   [opts.maxPoints]      累積件数の安全上限
  * @param {(rows:object[], info:object)=>void} opts.onChunk    チャンク取得ごと
  * @param {(info:object)=>void}                [opts.onProgress] 進捗更新ごと
- * @returns {Promise<{total:number, failed:number, chunks:number, aborted:boolean, limitReached:boolean}>}
+ * @returns {Promise<{total:number, failed:number, chunks:number, aborted:boolean, limitReached:boolean, duplicates:number}>}
  */
 export async function collectTransactions({
   domainId,
@@ -172,8 +200,11 @@ export async function collectTransactions({
     chunks: chunks.length,
     done: 0,
     aborted: false,
-    limitReached: false
+    limitReached: false,
+    duplicates: 0 // チャンク境界で重複していたため除外した件数
   };
+
+  let prevIds = new Set(); // 直前のチャンクの txid (境界の重複除去用)
 
   const report = () => onProgress?.({ ...summary });
 
@@ -215,8 +246,14 @@ export async function collectTransactions({
     summary.done = i + 1;
 
     if (rows) {
+      const { unique, ids, duplicates } = dropBoundaryDuplicates(rows, prevIds);
+      prevIds = ids;
+      summary.duplicates += duplicates;
+      rows = unique;
       summary.total += rows.length;
       onChunk?.(rows, { index: i, start, end, ...summary });
+    } else {
+      prevIds = new Set(); // 失敗したチャンクとは境界を共有する比較ができない
     }
 
     report();

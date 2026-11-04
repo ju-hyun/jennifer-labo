@@ -115,6 +115,9 @@ export async function runCollection() {
     const messages = [];
     if (result.aborted) messages.push('収集を中断しました。');
     if (result.limitReached) messages.push('標本上限に到達したため収集を打ち切りました。期間を狭めてください。');
+    if (result.duplicates > 0) {
+      messages.push(`チャンク境界で重複していた ${fmtInt(result.duplicates)} 件を除外しました。`);
+    }
     if (result.failed > 0) messages.push(`${result.failed}/${result.chunks} チャンクの取得に失敗しスキップしました。`);
     if (result.total === 0 && !result.aborted) {
       messages.push('該当期間にトランザクションがありませんでした。');

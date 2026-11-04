@@ -90,3 +90,63 @@ describe('collectTransactions', () => {
     assert.equal(url.searchParams.get('time_pattern'), 'yyyyMMddHHmmss');
   });
 });
+
+describe('チャンク境界の重複除去', () => {
+  beforeEach(() => { globalThis.fetch = undefined; });
+
+  const tx = (txid, rt = 10) => ({ txid, responseTime: rt });
+
+  test('dropBoundaryDuplicates: 直前のチャンクと同じ txid の行だけを除く', () => {
+    const { unique, ids, duplicates } = api.dropBoundaryDuplicates([tx('a'), tx('b'), tx('c')], new Set(['b', 'z']));
+    assert.deepEqual(unique.map((r) => r.txid), ['a', 'c']);
+    assert.equal(duplicates, 1);
+    assert.deepEqual([...ids].sort(), ['a', 'b', 'c']); // 次の比較には除外した行の txid も含める
+  });
+
+  test('txid が無い行は判定できないので残す', () => {
+    const rows = [{ responseTime: 1 }, { txid: '', responseTime: 2 }, { txid: null, responseTime: 3 }];
+    const { unique, duplicates } = api.dropBoundaryDuplicates(rows, new Set(['', 'null']));
+    assert.equal(unique.length, 3);
+    assert.equal(duplicates, 0);
+  });
+
+  test('境界の行が両方のチャンクに返っても 1 回だけ数える', async () => {
+    // チャンク 0 と 1 の境界で終了したトランザクション "B" が、どちらのチャンクにも含まれる
+    const perChunk = [[tx('A'), tx('B')], [tx('B'), tx('C')], [tx('D')]];
+    let n = 0;
+    globalThis.fetch = async () => okJson(perChunk[n++]);
+    const received = [];
+    const r = await api.collectTransactions({
+      domainId: 1, startDate: new Date(0), endDate: new Date(3 * MIN),
+      onChunk: (rows) => received.push(...rows.map((x) => x.txid))
+    });
+    assert.deepEqual(received, ['A', 'B', 'C', 'D']);
+    assert.equal(r.total, 4);
+    assert.equal(r.duplicates, 1);
+  });
+
+  test('境界が排他的で重複がなければ、件数は変わらない', async () => {
+    const perChunk = [[tx('A')], [tx('B')]];
+    let n = 0;
+    globalThis.fetch = async () => okJson(perChunk[n++]);
+    const r = await api.collectTransactions({ domainId: 1, startDate: new Date(0), endDate: new Date(2 * MIN) });
+    assert.deepEqual([r.total, r.duplicates], [2, 0]);
+  });
+
+  test('比較するのは隣り合うチャンクだけ (離れたチャンクの同一 txid は除かない)', async () => {
+    const perChunk = [[tx('X')], [tx('Y')], [tx('X')]];
+    let n = 0;
+    globalThis.fetch = async () => okJson(perChunk[n++]);
+    const r = await api.collectTransactions({ domainId: 1, startDate: new Date(0), endDate: new Date(3 * MIN) });
+    assert.deepEqual([r.total, r.duplicates], [3, 0]);
+  });
+
+  test('上限件数の判定は重複を除いた件数で行う', async () => {
+    const perChunk = [[tx('A'), tx('B')], [tx('B'), tx('C')], [tx('D')]];
+    let n = 0;
+    globalThis.fetch = async () => okJson(perChunk[n++]);
+    const r = await api.collectTransactions({ domainId: 1, startDate: new Date(0), endDate: new Date(3 * MIN), maxPoints: 3 });
+    assert.equal(r.limitReached, true);
+    assert.equal(r.total, 3); // A, B, C (2 + 1)。重複の B は数えない
+  });
+});
