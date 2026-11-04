@@ -78,14 +78,15 @@ npm install
 
 ```javascript
 window.PTA_CONFIG = {
-  API_DOMAIN: ''
+  API_DOMAIN: '',
+  TIMEZONE: 'Asia/Tokyo'  // JENNIFER 서버의 시간대
 };
 ```
 
 | 변수명 | 설명 |
 |---|---|
 | `API_DOMAIN` | 프록시 없이 API 서버에 직접 요청할 때 사용 (Nginx 배포 시 비워둠) |
-
+| `TIMEZONE` | JENNIFER 서버의 시간대(IANA 이름, 배포 기본값 `Asia/Tokyo`). 월 경계와 '오늘' 판정을 서버의 달력 기준으로 만듭니다. 비우면 브라우저의 로컬 시각(이전 동작) |
 | `ALLOW_MOCK` | (선택) 서버 접속 실패 시 모크 데이터를 표시. 기본은 개발 서버에서만 허용. 운영에서는 지정하지 마세요 |
 
 > 이전 버전의 `BASE_URL` 은 사용되지 않습니다(남아 있어도 무시). 개발 서버 프록시 대상은 `.env` 의 `DEV_API_TARGET` 으로 지정합니다.

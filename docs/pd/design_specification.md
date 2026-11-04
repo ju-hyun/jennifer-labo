@@ -308,7 +308,7 @@ jennifer-labo/                      # PTA・PD 統合 Vite マルチページア
 │       ├── panel.js            # 詳細スライドパネル
 │       └── style.css           # スタイルシート
 ├── public/pd/
-│   ├── config.js               # ランタイム設定 (window.PD_CONFIG: API_DOMAIN, CHUNK_WAIT_MS, MAX_POINTS, CONFIRM_CHUNKS, 任意で ALLOW_MOCK)
+│   ├── config.js               # ランタイム設定 (window.PD_CONFIG: API_DOMAIN, TIMEZONE, CHUNK_WAIT_MS, MAX_POINTS, CONFIRM_CHUNKS, 任意で ALLOW_MOCK)
 │   └── vite.svg                # ファビコン
 ├── docs/pd/
 │   ├── help_ja.md / help_ko.md     # ヘルプ原稿
